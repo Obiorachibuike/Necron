@@ -176,6 +176,13 @@ export default function JobDetailPage() {
       toast({ title: "Added to tracker", tone: "success" });
       router.push(`/tracker?application=${application.id}`);
     } catch (caught) {
+      if (caught instanceof ApiError && caught.code === "application_exists") {
+        // One active application per job: open the existing one instead of duplicating it.
+        const existing = caught.details.find((detail) => detail.field === "application_id")?.message;
+        toast({ title: "Already in your tracker", tone: "info" });
+        if (existing) router.push(`/tracker?application=${existing}`);
+        return;
+      }
       toast({ title: "Could not add to tracker",
               description: caught instanceof ApiError ? caught.message : undefined, tone: "error" });
     } finally {

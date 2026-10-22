@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.base import AIError, AIMessage
-from app.ai.service import get_active_config, run_structured, untrusted_block
+from app.ai.service import ensure_ai_ready, get_active_config, run_structured, untrusted_block
 from app.core.config import get_settings
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.core.security import sign_download
@@ -779,6 +779,8 @@ async def generate_document(db: Session, user: User, job_id: str, *, doc_type: s
         raise ConflictError(
             "Approve the application strategy before generating documents.", code="strategy_unapproved")
 
+    if use_ai:
+        ensure_ai_ready(db, user.id)
     snapshot = build_snapshot(db, user)
     ai_message = "Generated deterministically from verified profile evidence."
     ai_draft = None
@@ -800,17 +802,36 @@ async def generate_document(db: Session, user: User, job_id: str, *, doc_type: s
             ai_draft=ai_draft, variant="tailored")
         title = title_for(job, "cv")
     plain = docs_text_for_review(content, doc_type)
-    document = Document(
-        user_id=user.id, job_id=job.id, doc_type=doc_type, title=title, template=template,
-        status="draft", current_version=1, source="ai" if ai_draft else "deterministic",
-        strategy_id=strategy.id,
-    )
-    db.add(document)
-    db.flush()
+    # One document per (job, type): regenerating adds a version and clears approval, so an
+    # earlier approved draft is preserved in history instead of being silently replaced or
+    # forked into a duplicate the tracker cannot follow.
+    document = db.scalar(select(Document).where(
+        Document.user_id == user.id, Document.job_id == job.id,
+        Document.doc_type == doc_type,
+    ).order_by(Document.updated_at.desc()))
+    created_by = "ai_drafter" if ai_draft else "deterministic_drafter"
+    if document is None:
+        document = Document(
+            user_id=user.id, job_id=job.id, doc_type=doc_type, title=title, template=template,
+            status="draft", current_version=1, source="ai" if ai_draft else "deterministic",
+            strategy_id=strategy.id,
+        )
+        db.add(document)
+        db.flush()
+        version_number = 1
+    else:
+        version_number = int(document.current_version or 0) + 1
+        document.current_version = version_number
+        document.title = title
+        document.template = template
+        document.strategy_id = strategy.id
+        document.source = "ai" if ai_draft else "deterministic"
+        document.status = "draft"
+        document.approved_at = None
+        document.review_round = 0
     db.add(DocumentVersion(
-        user_id=user.id, document_id=document.id, version_number=1, content=content,
-        plain_text=plain, change_note=ai_message[:400],
-        created_by="ai_drafter" if ai_draft else "deterministic_drafter",
+        user_id=user.id, document_id=document.id, version_number=version_number, content=content,
+        plain_text=plain, change_note=ai_message[:400], created_by=created_by,
         created_at=utcnow(),
     ))
     db.commit()

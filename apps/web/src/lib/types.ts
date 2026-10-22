@@ -188,7 +188,7 @@ export type JobMatch = {
   overall_score: number;
   category: string;
   breakdown: { category: string; label: string; weight: number; score: number | null;
-    rationale: string }[];
+    status?: string; evidence?: string[]; rationale: string; detail?: string }[];
   matched_skills: string[];
   missing_skills: string[];
   strengths: string[];
@@ -403,6 +403,8 @@ export type TemplateInfo = {
   ats_safe: boolean;
 };
 
+export type CVLink = { label: string; url: string };
+
 export type CVSection = {
   id: string;
   type: string;
@@ -430,7 +432,7 @@ export type CVContent = {
     email?: string;
     phone?: string;
     location?: string;
-    links?: string[];
+    links?: CVLink[];
     [key: string]: unknown;
   };
   summary: string;
@@ -696,6 +698,7 @@ export type AIProviderConfig = {
 
 export type AIStatus = {
   configured: boolean;
+  disclosure_accepted: boolean;
   provider: string;
   provider_label: string;
   model: string;

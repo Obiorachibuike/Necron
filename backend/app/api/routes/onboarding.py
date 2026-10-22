@@ -66,6 +66,20 @@ OBJECTIVES = {
 }
 
 
+def _deep_merge(base: dict, incoming: dict) -> dict:
+    """Merge nested objects so a stale tab cannot wipe another tab's fields.
+
+    Lists are replaced wholesale: removing an experience must persist as a removal.
+    """
+    merged = dict(base)
+    for key, value in incoming.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def _get_draft(db, user_id: str) -> OnboardingDraft | None:
     return db.scalar(select(OnboardingDraft).where(OnboardingDraft.user_id == user_id))
 
@@ -110,9 +124,7 @@ async def save_draft(payload: OnboardingDraftIn, user: CurrentUser, db: DbSessio
     if not draft:
         draft = OnboardingDraft(user_id=user.id, data={})
         db.add(draft)
-    merged = dict(draft.data or {})
-    merged.update(payload.data or {})
-    draft.data = merged
+    draft.data = _deep_merge(dict(draft.data or {}), payload.data or {})
     draft.step = payload.step
     if payload.step > user.onboarding_step:
         user.onboarding_step = payload.step
@@ -161,6 +173,11 @@ async def import_cv(user: CurrentUser, db: DbSession, file: UploadFile = File(..
                     "confirm each item you want to keep."),
         "can_apply": True,
     }
+
+
+# Provenance/verification are decided by the onboarding flow, not copied from the payload,
+# so they must be stripped before the validated fields are expanded into the model.
+_MANAGED_FIELDS = {"provenance", "verified"}
 
 
 def _prov(item: dict, default: str = "user_confirmed") -> tuple[str, bool]:
@@ -243,7 +260,8 @@ async def complete(payload: OnboardingCompleteIn, user: CurrentUser, db: DbSessi
             continue
         provenance, verified = _prov(item, item.get("provenance", "user_confirmed"))
         record = WorkExperience(
-            user_id=user.id, **validated.model_dump(exclude={"start_date", "end_date"}),
+            user_id=user.id,
+            **validated.model_dump(exclude={"start_date", "end_date"} | _MANAGED_FIELDS),
             start_date=validated.start_date, end_date=validated.end_date,
             provenance=provenance, verified=verified,
             sort_order=next_sort_order(db, WorkExperience, user.id),
@@ -262,7 +280,8 @@ async def complete(payload: OnboardingCompleteIn, user: CurrentUser, db: DbSessi
             counts["skipped_duplicates"] += 1
             continue
         provenance, verified = _prov(item, item.get("provenance", "user_confirmed"))
-        edu_data = validated.model_dump(exclude={"start_date", "end_date", "is_current"})
+        edu_data = validated.model_dump(
+            exclude={"start_date", "end_date", "is_current"} | _MANAGED_FIELDS)
         if validated.is_current:
             edu_data["status"] = "in_progress"
         record = Education(
@@ -285,7 +304,7 @@ async def complete(payload: OnboardingCompleteIn, user: CurrentUser, db: DbSessi
             continue
         provenance, verified = _prov(item, item.get("provenance", "user_confirmed"))
         db.add(Skill(
-            user_id=user.id, **validated.model_dump(exclude={"last_used"}),
+            user_id=user.id, **validated.model_dump(exclude={"last_used"} | _MANAGED_FIELDS),
             last_used=validated.last_used, provenance=provenance, verified=verified,
         ))
         keys["skill"].add(validated.name.strip().lower())
@@ -302,7 +321,7 @@ async def complete(payload: OnboardingCompleteIn, user: CurrentUser, db: DbSessi
         provenance, verified = _prov(item, item.get("provenance", "user_confirmed"))
         db.add(Project(
             user_id=user.id, **validated.model_dump(
-                exclude={"start_date", "end_date", "is_current"}),
+                exclude={"start_date", "end_date", "is_current"} | _MANAGED_FIELDS),
             start_date=validated.start_date, end_date=validated.end_date,
             provenance=provenance, verified=verified,
             sort_order=next_sort_order(db, Project, user.id),
@@ -321,7 +340,7 @@ async def complete(payload: OnboardingCompleteIn, user: CurrentUser, db: DbSessi
             continue
         provenance, verified = _prov(item, item.get("provenance", "user_confirmed"))
         db.add(Certification(
-            user_id=user.id, **validated.model_dump(),
+            user_id=user.id, **validated.model_dump(exclude=_MANAGED_FIELDS),
             provenance=provenance, verified=verified,
             sort_order=next_sort_order(db, Certification, user.id),
         ))
@@ -338,7 +357,7 @@ async def complete(payload: OnboardingCompleteIn, user: CurrentUser, db: DbSessi
             continue
         provenance, verified = _prov(item, item.get("provenance", "user_confirmed"))
         db.add(Achievement(
-            user_id=user.id, **validated.model_dump(),
+            user_id=user.id, **validated.model_dump(exclude=_MANAGED_FIELDS),
             provenance=provenance, verified=verified,
             sort_order=next_sort_order(db, Achievement, user.id),
         ))

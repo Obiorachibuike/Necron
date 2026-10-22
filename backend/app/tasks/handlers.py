@@ -68,11 +68,20 @@ def handle_document_generate(db: Session, task: BackgroundTask, ctx: TaskContext
         review = _run(run_review(db, user, document, use_ai=bool(payload.get("use_ai", True))))
     ctx.progress(95, "Saving document")
     db.refresh(document)
+    ai_requested = bool(payload.get("use_ai", True))
+    ai_used = document.source == "ai"
+    latest_version = max(document.versions, key=lambda v: v.version_number, default=None)
     return {
         "document_id": document.id,
         "status": document.status,
         "review_id": review.id if review else None,
         "critical_findings": review.critical_count if review else 0,
+        # Never imply AI wrote the draft when the provider was unreachable or unconfigured.
+        "ai_requested": ai_requested,
+        "ai_used": ai_used,
+        "ai_notice": ("" if ai_used or not ai_requested else
+                      (latest_version.change_note if latest_version else
+                       "AI drafting was unavailable; the draft was built from verified profile data.")),
     }
 
 

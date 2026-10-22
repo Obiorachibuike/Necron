@@ -10,11 +10,15 @@ T = TypeVar("T")
 
 
 class AppSchema(BaseModel):
-    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
+    """Base for request bodies: unknown keys are rejected instead of silently ignored."""
+
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True, extra="forbid")
 
 
 class OutSchema(AppSchema):
-    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
+    """Base for responses: tolerant of extra attributes supplied by construction helpers."""
+
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True, extra="ignore")
 
 
 class ORMModel(OutSchema):
@@ -79,7 +83,7 @@ def validate_http_url(value: str | None, *, allow_empty: bool = True) -> str:
     return value
 
 
-class ProfileLinkMixin(BaseModel):
+class ProfileLinkMixin(AppSchema):
     portfolio_url: str = Field("", max_length=2000)
     github_url: str = Field("", max_length=2000)
     linkedin_url: str = Field("", max_length=2000)

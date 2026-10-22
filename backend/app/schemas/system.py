@@ -130,6 +130,7 @@ class UsageSummary(AppSchema):
 
 class AIStatusOut(AppSchema):
     configured: bool
+    disclosure_accepted: bool = False
     provider: str = ""
     provider_label: str = ""
     model: str = ""

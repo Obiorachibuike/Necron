@@ -112,6 +112,8 @@ class JobMatch(Base, UUIDPrimaryKey, TimestampMixin):
     strong_matches: Mapped[list] = mapped_column(JSONType, default=list, nullable=False)
     partial_matches: Mapped[list] = mapped_column(JSONType, default=list, nullable=False)
     missing_requirements: Mapped[list] = mapped_column(JSONType, default=list, nullable=False)
+    matched_skills: Mapped[list] = mapped_column(JSONType, default=list, nullable=False)
+    missing_skills: Mapped[list] = mapped_column(JSONType, default=list, nullable=False)
     disqualifiers: Mapped[list] = mapped_column(JSONType, default=list, nullable=False)
     unknowns: Mapped[list] = mapped_column(JSONType, default=list, nullable=False)
     suggestions: Mapped[list] = mapped_column(JSONType, default=list, nullable=False)

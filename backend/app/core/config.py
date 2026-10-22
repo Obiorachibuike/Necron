@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     cookie_samesite: str = "lax"
     frontend_origin: str = "http://localhost:3000"
     allowed_hosts: str = "localhost,127.0.0.1,testserver"
+    # Explicit opt-in escape hatch for ephemeral preview/tunnel hosts. Never enable in production.
+    trust_all_hosts: bool = False
     expose_dev_tokens: bool | None = None
     require_email_verification: bool = False
     password_min_length: int = 10
@@ -110,6 +112,32 @@ class Settings(BaseSettings):
     @property
     def host_list(self) -> list[str]:
         return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+
+    @property
+    def effective_allowed_hosts(self) -> list[str]:
+        """Host allowlist for TrustedHostMiddleware.
+
+        ``*`` is an allow-everything wildcard, so it is only honoured when the operator
+        explicitly sets ``CP_TRUST_ALL_HOSTS=true``. In production a stray ``*`` is a
+        startup error rather than a silent hole; in development it is dropped with a
+        warning.
+        """
+        hosts = self.host_list
+        if "*" not in hosts:
+            return hosts or ["localhost", "127.0.0.1"]
+        if self.trust_all_hosts:
+            return ["*"]
+        cleaned = [host for host in hosts if host != "*"]
+        if self.is_production:
+            raise RuntimeError(
+                "CP_ALLOWED_HOSTS contains '*' in production. List explicit hostnames, or set "
+                "CP_TRUST_ALL_HOSTS=true only if you deliberately accept any Host header."
+            )
+        import logging
+
+        logging.getLogger("careerpilot.config").warning(
+            "ignoring '*' in CP_ALLOWED_HOSTS (set CP_TRUST_ALL_HOSTS=true to allow any host)")
+        return cleaned or ["localhost", "127.0.0.1"]
 
     @property
     def email_configured(self) -> bool:

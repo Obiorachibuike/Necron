@@ -11,6 +11,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from app.core.text import strip_control_characters
+from app.documents.designs import design_for
 
 logger = logging.getLogger("careerpilot.documents.render")
 
@@ -44,10 +45,14 @@ def render_text(content: dict, doc_type: str) -> bytes:
 def render_docx(content: dict, doc_type: str) -> bytes:
     try:
         import docx
-        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
         from docx.shared import Pt, RGBColor, Inches
     except ImportError as exc:  # pragma: no cover
         raise RenderError("DOCX generation is unavailable on this deployment.") from exc
+
+    design = design_for(content.get("template"))
+    accent = RGBColor.from_string(design.accent)
+    centered = design.name_align == "center"
 
     document = docx.Document()
     section = document.sections[0]
@@ -70,30 +75,41 @@ def render_docx(content: dict, doc_type: str) -> bytes:
     header = content.get("header", {})
     name = strip_control_characters(header.get("name", "") or "")
     title_paragraph = document.add_paragraph()
+    if centered:
+        title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = title_paragraph.add_run(name)
     run.bold = True
     run.font.size = Pt(20)
     run.font.color.rgb = RGBColor(0x11, 0x1A, 0x13)
     title_paragraph.paragraph_format.space_after = Pt(0)
+    if design.heading in {"upper_rule", "academic", "title"} and name:
+        _shade_or_rule(title_paragraph, border_color=design.accent)
 
     if header.get("headline"):
         paragraph = document.add_paragraph()
+        if centered:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = paragraph.add_run(strip_control_characters(header["headline"]))
         run.italic = True
         run.font.size = Pt(10.5)
         paragraph.paragraph_format.space_after = Pt(2)
 
     contact_bits = [header.get("email"), header.get("phone"), header.get("location")]
-    contact = "  |  ".join(bits for bits in contact_bits if bits)
+    contact = design.separator.join(bits for bits in contact_bits if bits)
     if contact:
         paragraph = document.add_paragraph()
+        if centered:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = paragraph.add_run(strip_control_characters(contact))
         run.font.size = Pt(9.5)
         paragraph.paragraph_format.space_after = Pt(1)
     links = header.get("links") or []
     if links:
         paragraph = document.add_paragraph()
-        run = paragraph.add_run("  |  ".join(f"{link.get('label')}: {link.get('url')}" for link in links))
+        if centered:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = paragraph.add_run(design.separator.join(
+            f"{link.get('label')}: {link.get('url')}" for link in links))
         run.font.size = Pt(9)
         run.font.color.rgb = RGBColor(0x33, 0x44, 0x38)
         paragraph.paragraph_format.space_after = Pt(4)
@@ -101,7 +117,7 @@ def render_docx(content: dict, doc_type: str) -> bytes:
     if doc_type == "cover_letter":
         _docx_cover_letter(document, content)
     else:
-        _docx_cv(document, content)
+        _docx_cv(document, content, design=design, accent=accent)
 
     buffer = io.BytesIO()
     document.save(buffer)
@@ -112,33 +128,84 @@ def render_docx(content: dict, doc_type: str) -> bytes:
     return data
 
 
-def _section_heading(document, text: str) -> None:
+def _shade_or_rule(paragraph, *, fill: str | None = None, border_color: str | None = None) -> None:
+    """Apply paragraph shading and/or a bottom rule, the DOCX equivalent of a styled heading."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    properties = paragraph._p.get_or_add_pPr()
+    if fill:
+        shading = OxmlElement("w:shd")
+        shading.set(qn("w:val"), "clear")
+        shading.set(qn("w:color"), "auto")
+        shading.set(qn("w:fill"), fill)
+        properties.append(shading)
+    if border_color:
+        borders = OxmlElement("w:pBdr")
+        bottom = OxmlElement("w:bottom")
+        bottom.set(qn("w:val"), "single")
+        bottom.set(qn("w:sz"), "6")
+        bottom.set(qn("w:space"), "2")
+        bottom.set(qn("w:color"), border_color)
+        borders.append(bottom)
+        properties.append(borders)
+
+
+def _section_heading(document, text: str, *, design, accent, index: int = 0) -> None:
     from docx.shared import Pt, RGBColor
 
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_before = Pt(8)
     paragraph.paragraph_format.space_after = Pt(2)
-    run = paragraph.add_run(strip_control_characters(text).upper())
+    label = strip_control_characters(text)
+    if design.heading in {"upper_plain", "upper_rule", "academic", "band", "boxed"}:
+        label = label.upper()
+    if design.heading == "numbered":
+        label = f"{index:02d}  {label.upper()}"
+    run = paragraph.add_run(label)
     run.bold = True
     run.font.size = Pt(11)
-    run.font.color.rgb = RGBColor(0x14, 0x2A, 0x1A)
+    if design.heading in {"title", "band", "numbered"}:
+        run.font.color.rgb = accent
+    else:
+        run.font.color.rgb = RGBColor(0x14, 0x2A, 0x1A)
+    if design.heading == "boxed":
+        _shade_or_rule(paragraph, fill="F1F5F2")
+    elif design.heading == "band":
+        _shade_or_rule(paragraph, fill="E8F5EC")
+    elif design.heading in {"upper_rule", "academic"}:
+        _shade_or_rule(paragraph, border_color=design.accent)
 
 
-def _docx_cv(document, content: dict) -> None:
+def _docx_cv(document, content: dict, *, design, accent) -> None:
     from docx.shared import Pt
 
     if content.get("summary"):
-        _section_heading(document, "Summary")
+        _section_heading(document, "Summary", design=design, accent=accent, index=1)
         document.add_paragraph(strip_control_characters(content["summary"]))
-    for section in content.get("sections", []):
+    for index, section in enumerate(content.get("sections", []), start=2):
         title = section.get("title", "")
-        _section_heading(document, title)
+        _section_heading(document, title, design=design, accent=accent, index=index)
         if section.get("type") == "skills":
-            for group in section.get("groups", []):
+            groups = section.get("groups", [])
+            if design.skills_two_column and len(groups) > 1:
+                half = (len(groups) + 1) // 2
+                table = document.add_table(rows=half, cols=2)
+                for position, group in enumerate(groups):
+                    cell = table.cell(position % half, position // half)
+                    paragraph = cell.paragraphs[0]
+                    run = paragraph.add_run(f"{group.get('category', 'Skills')}: ")
+                    run.bold = True
+                    paragraph.add_run(", ".join(
+                        strip_control_characters(item) for item in group.get("items", [])))
+                    paragraph.paragraph_format.space_after = Pt(1)
+                continue
+            for group in groups:
                 paragraph = document.add_paragraph()
                 run = paragraph.add_run(f"{group.get('category', 'Skills')}: ")
                 run.bold = True
-                paragraph.add_run(", ".join(strip_control_characters(item) for item in group.get("items", [])))
+                paragraph.add_run(", ".join(strip_control_characters(item)
+                                            for item in group.get("items", [])))
                 paragraph.paragraph_format.space_after = Pt(1)
             continue
         for item in section.get("items", []):
@@ -162,11 +229,14 @@ def _docx_cv(document, content: dict) -> None:
                 text = strip_control_characters(str(bullet))
                 if not text:
                     continue
-                paragraph = document.add_paragraph(text, style="List Bullet")
+                if design.bullet == "•":
+                    paragraph = document.add_paragraph(text, style="List Bullet")
+                else:
+                    paragraph = document.add_paragraph(f"{design.bullet}  {text}")
                 paragraph.paragraph_format.space_after = Pt(1)
                 paragraph.paragraph_format.left_indent = Pt(16)
             for link in item.get("links", []) or []:
-                paragraph = document.add_paragraph(f"Link: {strip_control_characters(link)}", style="List Bullet")
+                paragraph = document.add_paragraph(f"Link: {strip_control_characters(link)}")
                 paragraph.paragraph_format.left_indent = Pt(16)
 
 
@@ -288,35 +358,48 @@ def _numbered_canvas_class():
 
 def render_pdf(content: dict, doc_type: str, *, page_size: str = "a4") -> bytes:
     try:
-        from reportlab.lib.enums import TA_LEFT
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
         from reportlab.lib.pagesizes import A4, LETTER
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.units import mm
         from reportlab.platypus import (
+            BaseDocTemplate,
+            Frame,
+            FrameBreak,
+            HRFlowable,
             KeepTogether,
             ListFlowable,
             ListItem,
+            NextPageTemplate,
+            PageTemplate,
             Paragraph,
-            SimpleDocTemplate,
             Spacer,
+            Table,
+            TableStyle,
         )
     except ImportError as exc:  # pragma: no cover
         raise RenderError("PDF generation is unavailable on this deployment.") from exc
 
+    design = design_for(content.get("template"))
+    accent = colors.HexColor(f"#{design.accent}")
+    align = TA_CENTER if design.name_align == "center" else TA_LEFT
+    compact = design.layout == "compact"
+
     fonts = _pdf_fonts()
     regular, bold, italic, _bold_italic = fonts
     unicode_fonts = regular not in {"Helvetica", "Helvetica-Bold"}
-    base = ParagraphStyle("Base", fontName=regular, fontSize=9.4, leading=12.6,
+    base = ParagraphStyle("Base", fontName=regular, fontSize=9.0 if compact else 9.4,
+                          leading=12.0 if compact else 12.6,
                           textColor=(0.09, 0.12, 0.1), alignment=TA_LEFT, splitLongWords=1)
     name_style = ParagraphStyle("Name", parent=base, fontName=bold, fontSize=19, leading=22,
-                                spaceAfter=1, textColor=(0.05, 0.08, 0.06))
+                                spaceAfter=1, alignment=align, textColor=(0.05, 0.08, 0.06))
     headline_style = ParagraphStyle("Headline", parent=base, fontName=italic, fontSize=10,
-                                    leading=13, spaceAfter=2)
+                                    leading=13, spaceAfter=2, alignment=align)
     contact_style = ParagraphStyle("Contact", parent=base, fontSize=8.6, leading=11.4,
-                                   textColor=(0.28, 0.34, 0.29))
+                                   alignment=align, textColor=(0.28, 0.34, 0.29))
     section_style = ParagraphStyle("Section", parent=base, fontName=bold, fontSize=10.2,
-                                   leading=13, spaceBefore=8, spaceAfter=3,
-                                   textColor=(0.08, 0.18, 0.1))
+                                   leading=13, spaceBefore=8, spaceAfter=3, textColor=accent)
     item_title_style = ParagraphStyle("ItemTitle", parent=base, fontName=bold, fontSize=9.7,
                                       leading=12.2, spaceBefore=4, spaceAfter=1)
     item_meta_style = ParagraphStyle("ItemMeta", parent=base, fontName=italic, fontSize=8.9,
@@ -327,30 +410,145 @@ def render_pdf(content: dict, doc_type: str, *, page_size: str = "a4") -> bytes:
 
     size = LETTER if page_size == "letter" else A4
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=size, leftMargin=15 * mm, rightMargin=15 * mm,
+    doc_kwargs = dict(
+        pagesize=size, leftMargin=15 * mm, rightMargin=15 * mm,
         topMargin=13 * mm, bottomMargin=15 * mm,
         title=f"{content.get('header', {}).get('name', '')} — "
               f"{'CV' if doc_type == 'cv' else 'Cover Letter'}",
         author=content.get("header", {}).get("name", ""),
         subject=(content.get("target") or {}).get("role", ""),
     )
-    story = []
+
+    def make_doc(sidebar: bool) -> BaseDocTemplate:
+        if not sidebar:
+            return BaseDocTemplate(
+                buffer, **doc_kwargs,
+                pageTemplates=[PageTemplate(id="single", frames=[
+                    Frame(15 * mm, 15 * mm, size[0] - 30 * mm, size[1] - 28 * mm)])],
+            )
+        side_width = 60 * mm
+        main_x = 15 * mm + side_width + 8 * mm
+        main_width = size[0] - main_x - 15 * mm
+
+        def paint(canvas, document) -> None:
+            canvas.saveState()
+            canvas.setFillColor(colors.HexColor("#F4F8F4"))
+            canvas.rect(0, 0, 15 * mm + side_width, size[1], stroke=0, fill=1)
+            canvas.setFillColor(accent)
+            canvas.rect(15 * mm + side_width, 0, 1.2, size[1], stroke=0, fill=1)
+            canvas.restoreState()
+
+        return BaseDocTemplate(
+            buffer, **doc_kwargs,
+            pageTemplates=[
+                PageTemplate(id="first", frames=[
+                    Frame(15 * mm, 15 * mm, side_width, size[1] - 28 * mm,
+                          leftPadding=0, rightPadding=8 * mm, topPadding=0, bottomPadding=0),
+                    Frame(main_x, 15 * mm, main_width, size[1] - 28 * mm,
+                          leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0),
+                ], onPage=paint),
+                PageTemplate(id="later", frames=[
+                    Frame(15 * mm, 15 * mm, size[0] - 30 * mm, size[1] - 28 * mm)],
+                    onPage=lambda canvas, document: None),
+            ],
+        )
+
     header = content.get("header", {})
-    story.append(_pdf_paragraph(header.get("name", ""), name_style, unicode_fonts))
+    identity: list = []
+    identity.append(_pdf_paragraph(header.get("name", ""), name_style, unicode_fonts))
+    if design.heading in {"upper_rule", "academic", "title"} and header.get("name"):
+        identity.append(HRFlowable(width="100%", thickness=0.8, color=accent,
+                                   spaceBefore=1, spaceAfter=2))
     if header.get("headline"):
-        story.append(_pdf_paragraph(header["headline"], headline_style, unicode_fonts))
-    contact = "  |  ".join(bits for bits in (header.get("email"), header.get("phone"),
-                                             header.get("location")) if bits)
+        identity.append(_pdf_paragraph(header["headline"], headline_style, unicode_fonts))
+    contact = design.separator.join(
+        bits for bits in (header.get("email"), header.get("phone"), header.get("location")) if bits)
     if contact:
-        story.append(_pdf_paragraph(contact, contact_style, unicode_fonts))
+        identity.append(_pdf_paragraph(contact, contact_style, unicode_fonts))
     links = header.get("links") or []
     if links:
-        story.append(_pdf_paragraph(
-            "  |  ".join(f"{link.get('label')}: {link.get('url')}" for link in links),
+        identity.append(_pdf_paragraph(
+            design.separator.join(f"{link.get('label')}: {link.get('url')}" for link in links),
             contact_style, unicode_fonts))
 
+    def heading_flowable(title: str, index: int):
+        text = escape(_pdf_safe(title, unicode_fonts))
+        if design.heading == "numbered":
+            text = f"<font color='#{design.accent}'>{index:02d}</font>  {text.upper()}"
+        elif design.heading in {"upper_plain", "upper_rule", "academic", "band", "boxed"}:
+            text = text.upper()
+        if design.heading == "boxed":
+            style = ParagraphStyle("BoxedHeading", parent=section_style, backColor=colors.HexColor("#F1F5F2"),
+                                   borderPadding=(3, 4, 3, 4), textColor=colors.HexColor("#14291B"))
+        elif design.heading == "band":
+            style = ParagraphStyle("BandHeading", parent=section_style, backColor=colors.HexColor("#E8F5EC"),
+                                   borderPadding=(3, 4, 3, 4))
+        elif design.heading == "academic":
+            style = ParagraphStyle("AcademicHeading", parent=section_style, alignment=TA_CENTER,
+                                   textColor=colors.HexColor("#1F2937"))
+        else:
+            style = section_style
+        flows = [Paragraph(text, style)]
+        if design.heading in {"upper_rule"}:
+            flows.append(HRFlowable(width="100%", thickness=0.6, color=accent,
+                                    spaceBefore=1, spaceAfter=3))
+        elif design.heading == "academic":
+            flows.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#4B5563"),
+                                    spaceBefore=2, spaceAfter=3))
+        return flows
+
+    doc = make_doc(sidebar=design.layout == "sidebar" and doc_type == "cv")
+
+    def item_flows(section: dict) -> list:
+        flows: list = []
+        for item in section.get("items", []):
+            block = []
+            title_text = escape(_pdf_safe(item.get("title", ""), unicode_fonts))
+            if item.get("subtitle"):
+                title_text += " — " + escape(_pdf_safe(item["subtitle"], unicode_fonts))
+            if item.get("dates"):
+                title_text += f"  ({escape(_pdf_safe(item['dates'], unicode_fonts))})"
+            block.append(Paragraph(title_text, item_title_style))
+            if item.get("location"):
+                block.append(_pdf_paragraph(item["location"], item_meta_style, unicode_fonts))
+            flows.append(KeepTogether(block))
+            bullets = [str(b) for b in (item.get("bullets") or []) if str(b).strip()]
+            if bullets:
+                bullets_items = [
+                    ListItem(_pdf_paragraph(bullet, bullet_style, unicode_fonts), leftIndent=8)
+                    for bullet in bullets
+                ]
+                flows.append(ListFlowable(bullets_items, bulletType="bullet",
+                                          start=design.bullet, leftIndent=10,
+                                          bulletFontSize=7, bulletOffsetY=-1))
+            for link in item.get("links", []) or []:
+                flows.append(_pdf_paragraph(f"Link: {link}", item_meta_style, unicode_fonts))
+        return flows
+
+    def skills_flows(section: dict) -> list:
+        groups = section.get("groups", [])
+        cells = []
+        for group in groups:
+            text = (f"<b>{escape(_pdf_safe(group.get('category', 'Skills'), unicode_fonts))}:</b> "
+                    f"{escape(_pdf_safe(', '.join(group.get('items', [])), unicode_fonts))}")
+            cells.append(Paragraph(text, base))
+        if design.skills_two_column and len(cells) > 1:
+            half = (len(cells) + 1) // 2
+            rows = [[cells[index] if index < len(cells) else "",
+                     cells[index + half] if index + half < len(cells) else ""]
+                    for index in range(half)]
+            table = Table(rows, colWidths=["49%", "49%"], hAlign="LEFT")
+            table.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]))
+            return [table]
+        return cells
+
+    story: list = []
     if doc_type == "cover_letter":
+        story.extend(identity)
         recipient = content.get("recipient", {})
         story.append(Spacer(1, 10))
         if content.get("date"):
@@ -366,38 +564,58 @@ def render_pdf(content: dict, doc_type: str, *, page_size: str = "a4") -> bytes:
         story.append(Spacer(1, 4))
         story.append(_pdf_paragraph(content.get("closing", "Sincerely,"), para_style, unicode_fonts))
         story.append(_pdf_paragraph(content.get("signature", ""), item_title_style, unicode_fonts))
+        try:
+            doc.build(story, canvasmaker=_numbered_canvas_class())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("pdf_build_failed error=%s", type(exc).__name__)
+            raise RenderError("The PDF could not be generated from this content.") from exc
+        data = buffer.getvalue()
+        ok, message = validate_pdf(data)
+        if not ok:
+            raise RenderError(message)
+        return data
+
+    main: list = []
+    if content.get("summary"):
+        main.extend(heading_flowable("Summary", 1))
+        main.append(_pdf_paragraph(content["summary"], base, unicode_fonts))
+    sidebar_moves_skills = design.layout == "sidebar"
+    for index, section in enumerate(content.get("sections", []), start=2):
+        if sidebar_moves_skills and section.get("type") == "skills":
+            continue  # rendered in the sidebar column below
+        main.extend(heading_flowable(str(section.get("title", "")), index))
+        if section.get("type") == "skills":
+            main.extend(skills_flows(section))
+        else:
+            main.extend(item_flows(section))
+    if not main:
+        raise RenderError("The CV has no content to render.")
+
+    if sidebar_moves_skills and main:
+        # A real two-column layout: the identity + skills column sits beside the narrative.
+        # If the sidebar content cannot fit on one page the document falls back to the
+        # single-column flow rather than failing to export.
+        side_sections = [s for s in content.get("sections", []) if s.get("type") == "skills"]
+        sidebar: list = list(identity)
+        sidebar.append(Spacer(1, 6))
+        for section in side_sections:
+            sidebar.extend(heading_flowable(str(section.get("title", "")), 2))
+            sidebar.extend(skills_flows(section))
+        available = size[1] - 30 * mm
+        side_frame_width = 60 * mm - 8 * mm
+        try:
+            needed = sum(float(flow.wrap(side_frame_width, available)[1]) for flow in sidebar)
+        except Exception:  # noqa: BLE001 - measurement must never break export
+            needed = available + 1
+        if needed <= available and len(sidebar):
+            story = sidebar + [NextPageTemplate("later"), FrameBreak()] + main
+        else:
+            logger.info("pdf_sidebar_fallback reason=content_too_tall")
+            story = identity + main
+            doc = make_doc(sidebar=False)
     else:
-        if content.get("summary"):
-            story.append(_pdf_paragraph("SUMMARY", section_style, unicode_fonts))
-            story.append(_pdf_paragraph(content["summary"], base, unicode_fonts))
-        for section in content.get("sections", []):
-            story.append(_pdf_paragraph(str(section.get("title", "")).upper(), section_style,
-                                        unicode_fonts))
-            if section.get("type") == "skills":
-                for group in section.get("groups", []):
-                    group_text = (f"<b>{escape(_pdf_safe(group.get('category', 'Skills'), unicode_fonts))}:</b> "
-                                  f"{escape(_pdf_safe(', '.join(group.get('items', [])), unicode_fonts))}")
-                    story.append(Paragraph(group_text, base))
-                continue
-            for item in section.get("items", []):
-                block = []
-                title_text = escape(_pdf_safe(item.get("title", ""), unicode_fonts))
-                if item.get("subtitle"):
-                    title_text += " — " + escape(_pdf_safe(item["subtitle"], unicode_fonts))
-                if item.get("dates"):
-                    title_text += f"  ({escape(_pdf_safe(item['dates'], unicode_fonts))})"
-                block.append(Paragraph(title_text, item_title_style))
-                if item.get("location"):
-                    block.append(_pdf_paragraph(item["location"], item_meta_style, unicode_fonts))
-                story.append(KeepTogether(block))
-                bullets = [str(b) for b in (item.get("bullets") or []) if str(b).strip()]
-                if bullets:
-                    items = [ListItem(_pdf_paragraph(bullet, bullet_style, unicode_fonts), leftIndent=8)
-                             for bullet in bullets]
-                    story.append(ListFlowable(items, bulletType="bullet", start="•",
-                                              leftIndent=10, bulletFontSize=7, bulletOffsetY=-1))
-                for link in item.get("links", []) or []:
-                    story.append(_pdf_paragraph(f"Link: {link}", item_meta_style, unicode_fonts))
+        story = identity + main
+
     try:
         doc.build(story, canvasmaker=_numbered_canvas_class())
     except Exception as exc:  # noqa: BLE001 - reportlab raises varied errors
@@ -408,6 +626,7 @@ def render_pdf(content: dict, doc_type: str, *, page_size: str = "a4") -> bytes:
     if not ok:
         raise RenderError(message)
     return data
+
 
 
 # --------------------------------------------------------------------------- LaTeX

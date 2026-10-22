@@ -100,8 +100,8 @@ def create_app() -> FastAPI:
         expose_headers=["X-Request-ID", "Content-Disposition", "Retry-After"],
         max_age=600,
     )
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.host_list + ["*"]
-                       if settings.is_production else settings.host_list + ["*"])
+    app.add_middleware(TrustedHostMiddleware,
+                       allowed_hosts=settings.effective_allowed_hosts)
 
     install_error_handlers(app)
 

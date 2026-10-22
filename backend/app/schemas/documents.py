@@ -69,9 +69,15 @@ class MasterCVOut(OutSchema):
 class TemplateInfo(AppSchema):
     key: str
     label: str
+    layout: str
+    name_align: str
+    heading_style: str
     description: str
     best_for: str
     ats_safe: bool
+    order: list[str] = Field(default_factory=list)
+    skills_two_column: bool = False
+    doc_types: list[str] = Field(default_factory=lambda: ["cv"])
 
 
 class StrategyIn(AppSchema):

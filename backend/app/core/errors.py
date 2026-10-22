@@ -45,13 +45,15 @@ class AuthError(AppError):
 
 
 class ConflictError(AppError):
-    def __init__(self, message: str, code: str = "conflict") -> None:
-        super().__init__(409, code, message)
+    def __init__(self, message: str, code: str = "conflict",
+                 details: list[dict[str, Any]] | None = None) -> None:
+        super().__init__(409, code, message, details)
 
 
 class ValidationAppError(AppError):
-    def __init__(self, message: str, details: list[dict[str, Any]] | None = None) -> None:
-        super().__init__(422, "validation_error", message, details)
+    def __init__(self, message: str, details: list[dict[str, Any]] | None = None,
+                 code: str = "validation_error") -> None:
+        super().__init__(422, code, message, details)
 
 
 class RateLimitError(AppError):

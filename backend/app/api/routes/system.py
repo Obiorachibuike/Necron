@@ -192,6 +192,10 @@ async def meta(request: Request, db: DbSession) -> dict:
     return {
         "app_name": settings.app_name,
         "tagline": "Your Career. Your Strategy. Your Next Opportunity.",
+        "api_version": "v1",
+        "environment": settings.app_env,
+        "docs_url": "/api/v1/docs",
+        "openapi_url": "/api/v1/openapi.json",
         "email_configured": settings.email_configured,
         "email_verification_required": settings.require_email_verification,
         "max_upload_mb": settings.max_upload_mb,

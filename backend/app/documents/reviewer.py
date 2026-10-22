@@ -95,7 +95,12 @@ def review_document_rules(*, doc_type: str, content: dict, plain_text: str,
             "Replace the placeholder with verified information or remove it.",
         ))
 
-    numbers = unsupported_numbers(text, corpus + " " + job_text)
+    # The letter's own date line is not a factual claim about the candidate; scanning it
+    # would flag every letter containing a year.
+    claim_text = text
+    if doc_type == "cover_letter" and content.get("date"):
+        claim_text = claim_text.replace(str(content["date"]), " ")
+    numbers = unsupported_numbers(claim_text, corpus + " " + job_text)
     for number in numbers[:6]:
         findings.append(_finding(
             "critical", "factual_accuracy", "document", number,

@@ -4,12 +4,13 @@ Multi-user AI career-management application: job discovery, explainable matching
 review-gated application studio (CV / cover letter), interview practice, an application
 tracker, career insights and privacy controls.
 
-Brand accent: neon green `#39FF14`. Light and dark themes, no purple anywhere.
+Brand accent: neon green `#39FF14`. Light, dark and system themes. No purple anywhere.
 
-> **Status — read this first.** This repository is a working implementation under active
-> completion, not a shipped product. Sections below state exactly what has been exercised
-> and what has not. No deployment has been performed, no hosting is configured, and no
-> statistics, testimonials or job inventories are fabricated by the application.
+> **Status — read this first.** This is a working, tested implementation running locally, not
+> a deployed product. No hosting has been configured and no deployment has been performed.
+> Everything claimed below was executed in this repository; the "Known gaps" section lists what
+> was not. The application never fabricates statistics, testimonials, job inventories or
+> progress percentages.
 
 ---
 
@@ -17,13 +18,13 @@ Brand accent: neon green `#39FF14`. Light and dark themes, no purple anywhere.
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS, TanStack Query, Recharts, Lucide, React Hook Form + Zod (public/auth forms) |
+| Frontend | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS, TanStack Query, Recharts, Lucide, React Hook Form + Zod |
 | Backend | FastAPI, Pydantic v2, SQLAlchemy 2, Alembic, pytest, httpx |
-| Database | PostgreSQL in production (SQLite supported for local development) |
-| Documents | `python-docx` (DOCX), ReportLab (PDF), plain text |
-| Auth | Server-side sessions, httpOnly cookie, double-submit CSRF token, Argon2id password hashing |
-| Background work | Database-backed task queue + worker process (no Redis requirement) |
-| AI | Bring-your-own-provider: any OpenAI-compatible endpoint or local Ollama. Fully optional. |
+| Database | PostgreSQL (authoritative store); SQLite supported for local development and tests |
+| Documents | `python-docx` (DOCX), ReportLab (PDF), plain text, LaTeX source |
+| Auth | Server-side sessions, httpOnly cookie, double-submit CSRF token, Argon2id hashing |
+| Background work | Database-backed task queue and worker process (no Redis required) |
+| AI | Bring-your-own-provider: OpenAI-compatible endpoints or local Ollama. Entirely optional. |
 
 ---
 
@@ -34,21 +35,25 @@ backend/
   app/
     main.py            FastAPI app factory, lifespan, health checks
     core/              config, errors, security, rate limiting, SSRF-safe fetching, logging
-    database/          engine/session, Base, UTCTime columns
+    database/          engine/session, Base, UTC timestamp type
     models/            41 SQLAlchemy tables
     schemas/           Pydantic request/response models
     api/routes/        auth, onboarding, profile, jobs, documents, applications,
                        interviews, ai settings, workspace/system
     services/          business logic (matching, tracker, insights, privacy, notifications)
-    documents/         CV content model, reviewer, DOCX/PDF/TXT renderers, CV extraction
+    documents/         content model, template designs, reviewer, renderers, CV extraction
     jobs/              Greenhouse + Lever adapters, SSRF-safe URL import, registry
     ai/                provider adapters (OpenAI-compatible, Ollama), usage accounting
     tasks/             queue, worker loop, handlers
-  tests/               pytest (suite in progress — see Status)
+  migrations/          Alembic environment + initial revision (0001_initial)
+  tests/               pytest: unit + integration (174 tests)
 apps/web/
-  src/app/             public marketing + auth routes, authenticated app routes, onboarding
-  src/components/      app shell, UI kit, cards, onboarding editors
+  src/app/             public marketing, auth, authenticated app routes, onboarding wizard
+  src/components/      app shell, UI kit, cards, match score, test files
   src/lib/             API client, shared types, formatting helpers
+  src/test/            Vitest setup
+docs/                  ARCHITECTURE, SECURITY, AI_PROVIDERS, JOB_SOURCES
+DEPLOYMENT.md          step-by-step deployment instructions (nothing has been deployed)
 ```
 
 ---
@@ -60,26 +65,27 @@ apps/web/
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
-pip install fastapi "uvicorn[standard]" "sqlalchemy>=2.0" "pydantic>=2" pydantic-settings \
-    alembic "psycopg[binary]" python-docx reportlab pypdf httpx argon2-cffi cryptography \
-    email-validator python-multipart jinja2 pytest pytest-asyncio
+pip install -r requirements-dev.txt          # runtime + pytest + embedded Postgres helper
 
+cp .env.example .env                          # then edit the two required secrets
 export CP_SECRET_KEY="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
-export CP_DATABASE_URL="postgresql+psycopg://user:pass@localhost:5432/careerpilot"
+export CP_AI_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())')"
+
+# PostgreSQL (authoritative). Without this the backend falls back to SQLite for evaluation.
+export CP_DATABASE_URL="postgresql+psycopg://careerpilot:careerpilot@localhost:5432/careerpilot"
+alembic upgrade head
+
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Without `CP_DATABASE_URL` the backend uses `sqlite:///./careerpilot.db`, which is convenient
-for local evaluation but is not the intended production store.
-
-API documentation is served at `/api/v1/docs` and the OpenAPI schema at
-`/api/v1/openapi.json` (both are disabled in production unless `CP_DEBUG=true`).
-
-Run a standalone worker (recommended when `CP_ENABLE_INLINE_WORKER=false`):
+Run the background worker in a second shell when `CP_ENABLE_INLINE_WORKER=false`:
 
 ```bash
 cd backend && python -m app.worker
 ```
+
+API docs: `/api/v1/docs`, schema: `/api/v1/openapi.json` (empty in production unless
+`CP_DEBUG=true`). Health: `/api/v1/health`, readiness: `/api/v1/health/ready`.
 
 ### Frontend
 
@@ -89,31 +95,61 @@ npm install
 CP_BACKEND_URL=http://127.0.0.1:8000 npm run dev   # http://localhost:3000
 ```
 
-`next.config.ts` proxies `/api/:path*` to `CP_BACKEND_URL` so the browser only ever talks to
-the Next.js origin; the session cookie stays first-party.
+`next.config.ts` proxies `/api/:path*` to `CP_BACKEND_URL`, so the browser only talks to the
+Next.js origin and the session cookie stays first-party.
+
+---
+
+## Tests
+
+```bash
+cd backend && .venv/bin/python -m pytest        # 174 passed (unit + integration)
+cd apps/web && npm test                        # 9 passed (Vitest + Testing Library)
+cd apps/web && npm run typecheck && npm run build
+```
+
+What the suites cover:
+
+- **Unit** — password/session/CSRF helpers and URL/company normalisation; matching maths
+  (including thin-profile confidence shrinkage and the "insufficient data" path); all eight
+  template renderers (PDF/DOCX/TXT, validation, unicode); reviewer rules and approval blockers.
+- **Integration** — registration/login/logout/password change/session revocation, CSRF
+  enforcement, cross-user isolation, onboarding draft/import/complete, profile CRUD and
+  verification rules, job import (including SSRF rejection), matching, strategy approval gate,
+  document generation → review → revision → approval → export, master CV history, tracker
+  status transitions/reminders/calendar, interviews, insights, notifications, search, meta,
+  AI configuration encryption and usage reporting, task cancel/retry, privacy export and
+  account deletion.
+- **PostgreSQL** — the initial migration was generated against an empty PostgreSQL 16.2
+  database and verified with `upgrade head` (41/41 tables), a second no-op upgrade, and a
+  `downgrade base` → `upgrade head` round trip.
+- **Not covered** — there is no browser-driven end-to-end suite (Playwright) because no
+  browser runtime is installed in the development environment; the frontend is covered by
+  component/unit tests plus a production build. Live AI calls are not exercised: tests use an
+  unreachable local endpoint to prove the app reports the failure honestly.
 
 ---
 
 ## Configuration
 
-Settings are environment variables with the `CP_` prefix (see `backend/app/core/config.py`).
+Settings are environment variables with the `CP_` prefix (see `backend/app/core/config.py` and
+`backend/.env.example`).
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `CP_SECRET_KEY` | insecure dev value | **Must** be replaced in any real deployment. Signs sessions and encrypts AI keys. |
-| `CP_AI_ENCRYPTION_KEY` | falls back to secret | Optional separate key for provider credential encryption. |
+| `CP_SECRET_KEY` | insecure dev value | **Must** be replaced. Signs sessions and CSRF tokens. |
+| `CP_AI_ENCRYPTION_KEY` | falls back to secret | Encrypts provider credentials at rest. |
 | `CP_APP_ENV` | `development` | `production` enables secure cookies and hides dev tokens. |
-| `CP_DATABASE_URL` | `sqlite:///./careerpilot.db` | Use a PostgreSQL URL in production. |
-| `CP_AUTO_CREATE_SCHEMA` | `true` | Development convenience; production should run migrations. |
-| `CP_FRONTEND_ORIGIN` | `http://localhost:3000` | Used in verification/reset links and CORS. |
-| `CP_ALLOWED_HOSTS` | `localhost,127.0.0.1,testserver` | Comma-separated host allowlist. |
-| `CP_ENABLE_INLINE_WORKER` | `true` | Runs the queue worker inside the API process (single-process convenience). |
+| `CP_DATABASE_URL` | `sqlite:///./careerpilot.db` | PostgreSQL URL in any real deployment. |
+| `CP_AUTO_CREATE_SCHEMA` | `true` | Development convenience; production runs migrations. |
+| `CP_FRONTEND_ORIGIN` | `http://localhost:3000` | Origin allowed to make mutating requests. |
+| `CP_ALLOWED_HOSTS` | `localhost,127.0.0.1,testserver` | Host allowlist; `*` is refused in production. |
+| `CP_ENABLE_INLINE_WORKER` | `true` | Worker inside the API process (single-process convenience). |
 | `CP_MEDIA_ROOT` | `backend/media` | Private storage for uploads and exports. |
-| `CP_MAX_UPLOAD_MB` | `10` | CV upload limit. |
-| `CP_AI_ALLOW_PRIVATE_ENDPOINTS` | `false` | Required only for loopback/LAN AI endpoints such as Ollama on localhost. |
-| `CP_SMTP_HOST` / `CP_SMTP_PORT` / `CP_SMTP_USER` / `CP_SMTP_PASSWORD` | unset | When unset, verification/reset links are returned to the UI in development and the app never claims an email was sent. |
-| `CP_RATE_LIMIT_ENABLED` | `true` | In-process rate limiting. |
-| `CP_AI_PRICING_JSON` | `{}` | Optional model pricing table; without it the UI states that cost estimates are unavailable. |
+| `CP_AI_ALLOW_PRIVATE_ENDPOINTS` | `false` | Required for loopback/LAN AI endpoints such as local Ollama. |
+| `CP_SMTP_*` | unset | Without SMTP the API reports `email_configured=false` and never claims an email was sent. |
+| `CP_RATE_LIMIT_ENABLED` | `true` | In-process per-user/IP limits. |
+| `CP_AI_PRICING_JSON` | `{}` | Optional price table; without it the UI shows tokens and no cost estimate. |
 
 Frontend: `CP_BACKEND_URL` (server-side only, used by the rewrite proxy).
 
@@ -122,88 +158,111 @@ Frontend: `CP_BACKEND_URL` (server-side only, used by the rewrite proxy).
 ## What is implemented
 
 **Accounts & security**
-- Email + password registration, sign-in, sign-out, password reset, email verification flow.
-- Argon2id hashing, server-side sessions (24-byte tokens, hashed at rest), httpOnly cookie,
-  double-submit CSRF header on all mutations, per-route rate limits.
-- Every query is scoped to the authenticated user; cross-user IDs return 404, not data.
-- Sessions list/revoke, password change (revokes other sessions), account deletion with
-  password + typed `DELETE` confirmation.
+- Register, sign in/out, password reset, email verification flow, session list/revoke.
+- Argon2id hashing, server-side sessions hashed at rest, httpOnly `SameSite=Lax` cookie,
+  double-submit CSRF header on every mutation, per-route rate limits, strict host allowlist,
+  origin check on mutations.
+- Every query is scoped to the authenticated user; another user's IDs return 404.
+- Password change revokes other sessions; account deletion requires the password and the typed
+  word `DELETE`, then removes the account's rows and files.
 
 **Onboarding (11 steps)**
-- Resumable draft persisted per step, CV import (PDF/DOCX) with extraction review, explicit
-  provenance (`user_confirmed`, `document_extracted`, …) and a verification flag per record.
-- Imported items are never silently marked verified, and the completion call deduplicates.
+- Resumable draft persisted per step (deep-merged, never clobbered by a stale tab), PDF/DOCX CV
+  import with reviewable extraction, explicit provenance and a verification flag per record.
+- Imported material is never auto-verified; completion deduplicates and marks imports applied.
 
 **Career profile**
 - Profile, preferences and writing style; experience, education, skills, projects,
-  certifications and achievements with add/edit/delete/verify.
+  certifications and achievements with add/edit/delete/verify and input validation
+  (including "expert skill requires evidence" and future-date rejection).
 
 **Jobs**
 - Manual entry, SSRF-safe URL import, public Greenhouse and Lever board adapters, saved
-  searches, optional scheduled discovery, freshness re-validation.
+  searches with validation, optional scheduled discovery, freshness re-validation.
 - Deterministic, explainable scoring (skills 30, experience 18, location 12, education 8,
   projects 8, employment type 5, salary 5, certifications 4, industry 3) with per-category
   rationale, matched/missing skills and bands at 80/60/40. No AI required.
+- Categories with no evidence are shown as "not scored"; if nothing is measurable the match is
+  labelled `insufficient_data` instead of a fake 0/100 or a flattering 100.
 
 **Application Studio**
 - Strategy approval gate → drafter → independent reviewer → revision loop → approval →
-  PDF/DOCX/TXT export with file validation.
+  PDF/DOCX/TXT export with file validation; regenerating versions the existing document rather
+  than forking duplicates, and clears approval until it is reviewed again.
 - Critical factual findings block approval; warnings require explicit acknowledgement.
-- Master CV with eight distinct templates, versioned edits (never silently overwritten),
-  restore-as-new-version and downloads.
+- Master CV with eight genuinely distinct templates (section order, heading treatment,
+  alignment, two-column or sidebar layout, skills grid), versioned edits, restore-as-new-version
+  and validated downloads.
+- AI drafting is opt-in per action. When no provider is configured the API refuses the AI
+  request up front; if a configured provider is unreachable at run time the draft is labelled
+  deterministic and the notice says why.
 
 **Interview coach**
 - Mock sessions with job-aware question generation, deterministic rubric scoring, optional AI
-  feedback, follow-up prompts, notes and session summaries.
+  feedback, follow-ups after an answer, notes and session summaries.
 
 **Tracker & insights**
-- Kanban/table/calendar views, status history, reminders, stats and response-rate calculation
-  from real records only.
-- Insights cite evidence, sample size, calculation method and confidence.
+- Kanban/table/calendar views, status history, reminders, stats and response rates computed
+  from real records only. One active application per job, with a 409 that links to the existing
+  record.
+- Insights cite evidence, sample size, calculation method and confidence; empty states say so.
 
 **AI provider settings**
-- OpenAI-compatible and Ollama adapters, encrypted API keys (never returned to the client),
-  connection tests, model listing, per-task model overrides, token accounting, monthly limits,
-  and an explicit disclosure that must be accepted before activation.
+- OpenAI-compatible and Ollama adapters, encrypted API keys (never returned), connection tests,
+  model listing, per-task model overrides, token accounting, daily/monthly limits, and an
+  explicit disclosure that must be accepted before any provider call — enforced at the single
+  network choke point, not just in the UI.
 
 **Platform**
-- Versioned `/api/v1` with OpenAPI, health/readiness endpoints, database-backed background
-  tasks with real status and retry/cancel, in-app notifications, JSON data export.
+- Versioned `/api/v1` with OpenAPI, health/readiness, database-backed tasks with real status,
+  retry and cancel, in-app notifications, JSON data export, feedback intake.
 
-## What is not done yet
+---
 
-These are known gaps; do not treat them as delivered:
+## Known gaps and unconfigured integrations
 
-- **Alembic migration is empty.** The schema is currently created with
-  `Base.metadata.create_all` when `CP_AUTO_CREATE_SCHEMA=true`. A reviewable initial revision
-  still needs to be generated and verified on an empty PostgreSQL database.
-- **No pytest suite.** `backend/tests/` contains only the package marker. Verification so far
-  was done with scripted end-to-end smoke runs (SQLite and an embedded PostgreSQL instance).
-- **`next build` has not been run.** The frontend typechecks (`tsc --noEmit`) but a production
-  build and a full browser walkthrough against the live API are still pending.
-- **Some backend paths are untested end to end:** application creation with a CV document id,
-  `POST /applications/{id}/status`, AI provider activation with a public endpoint, task
-  retry/cancel, `/search`, `/meta`, and the onboarding completion payload with education
-  `is_current`.
-- **Host allowlist is permissive** (`TrustedHostMiddleware` currently accepts `*` in addition to
-  the configured list) and must be tightened before any real deployment.
-- **Transactional email is unconfigured.** Without SMTP, verification and reset links are only
-  surfaced in development.
-- README `DEPLOYMENT.md` and `docs/{ARCHITECTURE,SECURITY,AI_PROVIDERS,JOB_SOURCES}` are still
-  to be written.
-- No production login is provided in this repository; create an account through the sign-up page.
+These are deliberate statements of what is **not** done. Do not treat them as delivered:
+
+- **Nothing is deployed.** No hosting, domain, TLS certificate, database service or email
+  provider is configured. `DEPLOYMENT.md` gives the steps; no step has been executed.
+- **Transactional email is unconfigured.** With no SMTP settings, verification and reset links
+  are logged server-side (and returned by the API only when `CP_EXPOSE_DEV_TOKENS=true`).
+- **AI is unconfigured by default.** No shared key is shipped. Users add their own provider in
+  Settings → AI provider; without one, every AI action is disabled or refused and deterministic
+  features remain available. Live provider calls were not tested against a real vendor.
+- **Job discovery depends on public boards.** Greenhouse and Lever adapters are implemented and
+  tested against their documented JSON shapes, but tests do not call the live services. No
+  general web search provider is implemented; other sources are imported manually or by URL.
+- **No scheduled email digests or push notifications.** Reminders appear in-app and in the
+  calendar; there is no mailer to send them.
+- **No browser end-to-end suite** (see Tests). Frontend coverage is component-level plus the
+  production build.
+- **Cost estimates need a pricing table.** Without `CP_AI_PRICING_JSON` the UI reports token
+  usage and states that cost estimation is unavailable.
+- **No production account is seeded.** Create one through the sign-up page.
 
 ---
 
 ## Product rules enforced in code
 
-1. No fabricated qualifications, employers, metrics or job listings; AI output is checked
-   against verified profile evidence before it enters a document.
+1. No fabricated qualifications, employers, metrics or job listings. AI output is checked
+   against verified profile evidence before it can enter a document.
 2. The master CV is never overwritten without creating a new version.
-3. Documents with unresolved critical findings cannot be approved.
+3. Documents with unresolved critical findings cannot be approved, and unapproved documents
+   cannot be exported.
 4. CareerPilot never submits an application; the tracker records what you did elsewhere.
 5. API keys are encrypted at rest and never returned by the API.
-6. Nothing is sent to an AI provider until you configure one and start an AI action.
+6. No profile content reaches an AI provider until a provider is configured and the disclosure
+   is accepted — enforced before the HTTP call.
+7. Every user's data is scoped server-side; cross-user identifiers return 404.
+
+## Documentation
+
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) — environment, migrations, worker, reverse proxy, backups.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — components, data model, request flows.
+- [`docs/SECURITY.md`](docs/SECURITY.md) — threat model and controls, with honest limits.
+- [`docs/AI_PROVIDERS.md`](docs/AI_PROVIDERS.md) — provider setup, privacy, failure behaviour.
+- [`docs/JOB_SOURCES.md`](docs/JOB_SOURCES.md) — supported sources and how to add one.
 
 ## License
 

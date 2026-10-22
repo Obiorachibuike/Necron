@@ -4,14 +4,16 @@ const CATEGORY_LABEL: Record<string, string> = {
   strong_match: "Strong match",
   worth_considering: "Worth considering",
   stretch: "Stretch",
-  low_alignment: "Low alignment",
+  low_match: "Low match",
+  insufficient_data: "Not enough data",
 };
 
 const CATEGORY_TONE: Record<string, string> = {
   strong_match: "text-[var(--success)]",
   worth_considering: "text-[var(--brand)]",
   stretch: "text-[var(--warning)]",
-  low_alignment: "text-[var(--muted)]",
+  low_match: "text-[var(--danger)]",
+  insufficient_data: "text-[var(--muted)]",
 };
 
 export function MatchScore({
@@ -24,6 +26,15 @@ export function MatchScore({
 }) {
   if (score === null || score === undefined) {
     return <span className="text-xs text-[var(--muted)]">Not scored yet</span>;
+  }
+  if (category === "insufficient_data") {
+    // A neutral midpoint was stored because nothing could be assessed. Showing "50/100"
+    // would read as a real result, so render the absence of evidence instead.
+    return (
+      <span className="text-xs text-[var(--muted)]" title="Add profile details or a fuller listing to score this job">
+        Not enough data to score
+      </span>
+    );
   }
   const label = CATEGORY_LABEL[category ?? ""] ?? "Match score";
   const tone = CATEGORY_TONE[category ?? ""] ?? "text-[var(--fg)]";

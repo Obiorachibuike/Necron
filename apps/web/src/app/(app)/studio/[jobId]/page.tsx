@@ -16,7 +16,7 @@ import { Field, Select, Textarea } from "@/components/ui/field";
 import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api";
-import type { Document, DocumentDetail, DocumentFile, DocumentFinding, Job, Paginated, Strategy, TemplateInfo } from "@/lib/types";
+import type { AIStatus, Document, DocumentDetail, DocumentFile, DocumentFinding, Job, Paginated, Strategy, TemplateInfo } from "@/lib/types";
 import { formatDateTime, humanize } from "@/lib/utils";
 
 const TONES = ["professional", "warm", "direct", "enthusiastic", "analytical"];
@@ -33,7 +33,7 @@ export default function StudioPage() {
   const [template, setTemplate] = React.useState("ats");
   const [tone, setTone] = React.useState("professional");
   const [length, setLength] = React.useState("standard");
-  const [useAi, setUseAi] = React.useState(true);
+  const [useAi, setUseAi] = React.useState(false);
   const [busy, setBusy] = React.useState("");
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [selectedVersion, setSelectedVersion] = React.useState<number | null>(null);
@@ -64,6 +64,16 @@ export default function StudioPage() {
       return status === "draft" || status === "under_review" || status === "revision_required" ? 3000 : false;
     },
   });
+  const aiQuery = useQuery({
+    queryKey: ["ai-status"],
+    queryFn: () => api.get<AIStatus>("/ai/status"),
+    staleTime: 60_000,
+  });
+  const aiReady = Boolean(aiQuery.data?.configured && aiQuery.data?.disclosure_accepted);
+  React.useEffect(() => {
+    // Default to AI only when a provider is configured AND the disclosure was accepted.
+    setUseAi(aiReady);
+  }, [aiReady]);
   const tasksQuery = useQuery({
     queryKey: ["tasks", "studio"],
     queryFn: () => api.get<{ items: { id: string; title: string }[] }>("/tasks?status=queued&page_size=5"),
@@ -216,14 +226,26 @@ export default function StudioPage() {
     if (!document) return;
     setBusy("link");
     try {
-      const application = await api.post<{ id: string }>("/applications", {
-        job_id: jobId, company: job?.company ?? "", role_title: job?.title ?? "",
-        location: job?.location ?? "", source: job?.provider ?? "manual", status: "documents_in_progress",
-      });
-      await api.patch(`/documents/${document.id}/link-application`, { application_id: application.id });
+      let applicationId: string;
+      try {
+        const application = await api.post<{ id: string }>("/applications", {
+          job_id: jobId, company: job?.company ?? "", role_title: job?.title ?? "",
+          location: job?.location ?? "", source: job?.provider ?? "manual",
+          status: "documents_in_progress",
+        });
+        applicationId = application.id;
+      } catch (caught) {
+        // Reuse the existing tracker entry instead of failing when one already exists.
+        const existing = caught instanceof ApiError && caught.code === "application_exists"
+          ? caught.details.find((detail) => detail.field === "application_id")?.message
+          : undefined;
+        if (!existing) throw caught;
+        applicationId = existing;
+      }
+      await api.patch(`/documents/${document.id}/link-application`, { application_id: applicationId });
       await client.invalidateQueries({ queryKey: ["document", document.id] });
       toast({ title: "Linked to application", tone: "success" });
-      router.push(`/tracker?application=${application.id}`);
+      router.push(`/tracker?application=${applicationId}`);
     } catch (caught) {
       toast({ title: "Could not link application",
               description: caught instanceof ApiError ? caught.message : undefined, tone: "error" });
@@ -318,12 +340,17 @@ export default function StudioPage() {
                 </Select>
               </Field>
               <label className="flex items-start gap-2 rounded-xl border p-3 text-sm">
-                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#39FF14]" checked={useAi}
+                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#39FF14]" checked={useAi && aiReady}
+                       disabled={!aiReady}
                        onChange={(event) => setUseAi(event.target.checked)} />
                 <span>
                   <span className="font-medium">Use configured AI provider</span>
                   <span className="mt-0.5 block text-xs text-[var(--muted)]">
-                    When off, deterministic drafting is used. AI never adds unverified facts.
+                    {aiReady
+                      ? "When off, deterministic drafting is used. AI never adds unverified facts."
+                      : aiQuery.data?.configured
+                        ? "Accept the AI data disclosure in Settings → AI provider to enable AI drafting."
+                        : "No AI provider is configured. Drafts are built from verified profile data."}
                   </span>
                 </span>
               </label>
