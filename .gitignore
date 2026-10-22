@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------------------
+# Python / FastAPI backend
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Local SQLite databases and runtime media (never commit user data)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+backend/media/
+media/
+backend/.env
+backend/.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Node / Next.js frontend
+# ---------------------------------------------------------------------------
+node_modules/
+.next/
+out/
+build/
+dist/
+.turbo/
+.vercel/
+*.tsbuildinfo
+apps/web/.env.local
+apps/web/.env*.local
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---------------------------------------------------------------------------
+# Editors and OS
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# ---------------------------------------------------------------------------
+# Local scratch data
+# ---------------------------------------------------------------------------
+tmp/
+scratch/
+*.log
