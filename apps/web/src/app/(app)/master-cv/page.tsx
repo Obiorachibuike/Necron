@@ -228,11 +228,26 @@ export default function MasterCVPage() {
                   </Field>
                 ))}
                 <div className="sm:col-span-2">
-                  <Field label="Links" htmlFor="cv-links" help="One URL per line.">
-                    <Textarea id="cv-links" rows={2}
-                              value={(header.links ?? []).join("\n")}
+                  <Field label="Links" htmlFor="cv-links"
+                         help="One per line as “Label | https://url”. Invalid URLs are dropped.">
+                    <Textarea id="cv-links" rows={3}
+                              value={(header.links ?? []).map((link) => `${link.label} | ${link.url}`).join("\n")}
                               onChange={(event) => {
-                                setHeader({ ...header, links: event.target.value.split("\n").map((v) => v.trim()).filter(Boolean) });
+                                setHeader({
+                                  ...header,
+                                  links: event.target.value
+                                    .split("\n")
+                                    .map((line) => line.trim())
+                                    .filter(Boolean)
+                                    .map((line) => {
+                                      const [first, ...rest] = line.split("|").map((part) => part.trim());
+                                      const hasLabel = rest.length > 0;
+                                      const url = hasLabel ? rest.join("|").trim() : first;
+                                      const label = hasLabel && first ? first : url.replace(/^https?:\/\//, "");
+                                      return { label, url };
+                                    })
+                                    .filter((link) => /^https?:\/\//i.test(link.url)),
+                                });
                                 setDirty(true);
                               }} />
                   </Field>
@@ -318,7 +333,11 @@ export default function MasterCVPage() {
               </p>
               {header?.links?.length ? (
                 <p className="mt-1 flex flex-wrap gap-2 text-xs underline underline-offset-2">
-                  {header.links.map((link: string) => <span key={link}>{link}</span>)}
+                  {header.links.map((link) => (
+                    <span key={`${link.label}-${link.url}`}>
+                      {link.label ? `${link.label}: ` : ""}{link.url}
+                    </span>
+                  ))}
                 </p>
               ) : null}
             </div>

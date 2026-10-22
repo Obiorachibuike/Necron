@@ -1,7 +1,7 @@
 """Application tracker, timeline, calendar and reminders."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Query
 from sqlalchemy import func, select
@@ -55,11 +55,17 @@ async def stats(user: CurrentUser, db: DbSession) -> ApplicationStats:
     return ApplicationStats(**application_stats(db, user.id))
 
 
+def _as_utc(value: datetime) -> datetime:
+    return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
 @router.get("/applications/calendar", response_model=list[dict])
 async def calendar(user: CurrentUser, db: DbSession,
                    start: datetime | None = None, end: datetime | None = None) -> list[dict]:
-    start = start or utcnow() - timedelta(days=7)
-    end = end or utcnow() + timedelta(days=60)
+    # A date-only query string parses as a naive datetime; normalise both bounds so the
+    # comparison against timezone-aware stored timestamps can never raise.
+    start = _as_utc(start) if start else utcnow() - timedelta(days=7)
+    end = _as_utc(end) if end else utcnow() + timedelta(days=60)
     if end <= start:
         raise ValidationAppError("End must be after start.")
     if end - start > timedelta(days=370):

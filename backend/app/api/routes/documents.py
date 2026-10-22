@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
 from sqlalchemy import func, or_, select
 
+from app.ai.service import ensure_ai_ready
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import get_settings
 from app.core.errors import AppError, ConflictError, NotFoundError, ValidationAppError
@@ -153,6 +154,8 @@ async def list_documents(
 @router.post("/documents/generate", response_model=GenerateAccepted, status_code=202)
 async def generate(payload: DocumentGenerateRequest, user: CurrentUser, db: DbSession) -> GenerateAccepted:
     job = job_owned_or_404(db, user.id, payload.job_id)
+    if payload.use_ai:
+        ensure_ai_ready(db, user.id)
     strategy = None
     if payload.strategy_id:
         strategy = db.get(ApplicationStrategy, payload.strategy_id)

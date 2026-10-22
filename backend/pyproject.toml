@@ -1,0 +1,18 @@
+[project]
+name = "careerpilot-api"
+version = "1.0.0"
+description = "CareerPilot AI backend (FastAPI + SQLAlchemy + Alembic)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"
+filterwarnings = [
+    "ignore::DeprecationWarning:starlette.*",
+    "ignore::DeprecationWarning:httpx.*",
+]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

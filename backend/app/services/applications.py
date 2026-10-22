@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError, ValidationAppError
+from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.database.base import utcnow
 from app.models import (
     APPLICATION_STATUSES,
@@ -55,6 +55,19 @@ def create_application(db: Session, user: User, data: dict) -> Application:
         job = db.get(JobListing, data["job_id"])
         if not job or job.user_id != user.id:
             raise NotFoundError("Linked job not found")
+    if job is not None:
+        existing = db.scalar(select(Application).where(
+            Application.user_id == user.id, Application.job_id == job.id,
+            Application.status.notin_(("closed", "withdrawn")),
+        ).order_by(Application.updated_at.desc()))
+        if existing is not None:
+            # One active application per job keeps the tracker and job detail consistent.
+            raise ConflictError(
+                "You already have an active application for this job. Open it in the tracker "
+                "instead of creating a duplicate.",
+                code="application_exists",
+                details=[{"field": "application_id", "message": existing.id}],
+            )
     cv = _assert_document(db, user.id, data.get("cv_document_id"), "cv")
     letter = _assert_document(db, user.id, data.get("cover_letter_document_id"), "cover_letter")
     company = (data.get("company") or (job.company if job else "")).strip()

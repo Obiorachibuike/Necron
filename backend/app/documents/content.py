@@ -20,35 +20,12 @@ from app.core.text import (
     strip_control_characters,
     word_count,
 )
+from app.documents.designs import DESIGN_KEYS, DESIGN_LIST, design_for, section_title
 from app.services.profile_service import ProfileSnapshot
 
-TEMPLATE_INFO = [
-    {"key": "ats", "label": "ATS-Friendly", "ats_safe": True,
-     "description": "Single column, standard section headings, no graphics. Optimised for text extraction.",
-     "best_for": "Applications through applicant tracking systems and conservative employers."},
-    {"key": "modern_developer", "label": "Modern Developer", "ats_safe": True,
-     "description": "Skills-forward layout with projects ahead of experience for product engineers.",
-     "best_for": "Startups and product teams hiring broadly skilled engineers."},
-    {"key": "fullstack_engineer", "label": "Full-Stack Engineer", "ats_safe": True,
-     "description": "Balanced frontend/backend emphasis with grouped technical skills.",
-     "best_for": "Full-stack roles that span UI, API and data layers."},
-    {"key": "backend_engineer", "label": "Backend Engineer", "ats_safe": True,
-     "description": "Leads with systems, APIs, databases and reliability evidence.",
-     "best_for": "Backend, platform and infrastructure roles."},
-    {"key": "ai_engineer", "label": "AI Engineer", "ats_safe": True,
-     "description": "Highlights models, data pipelines, evaluation and applied AI projects.",
-     "best_for": "Machine learning, applied AI and data-intensive engineering roles."},
-    {"key": "mobile_developer", "label": "Mobile Developer", "ats_safe": True,
-     "description": "Prioritises shipped mobile products, platform skills and store outcomes.",
-     "best_for": "Android, iOS and cross-platform mobile roles."},
-    {"key": "graduate", "label": "Graduate & Early Career", "ats_safe": True,
-     "description": "Education, projects and coursework come first for candidates with limited work history.",
-     "best_for": "Graduate schemes, internships and first professional roles."},
-    {"key": "academic", "label": "Academic & Research", "ats_safe": True,
-     "description": "Research, publications, teaching and grants are grouped explicitly.",
-     "best_for": "Research, academic and teaching-intensive roles."},
-]
-TEMPLATE_KEYS = {item["key"] for item in TEMPLATE_INFO}
+# Design specs live in app/documents/designs.py; re-exported here for existing imports.
+TEMPLATE_INFO = [design.as_info() for design in DESIGN_LIST]
+TEMPLATE_KEYS = set(DESIGN_KEYS)
 
 TONE_HINTS = {
     "formal": "Formal and courteous.",
@@ -256,18 +233,10 @@ def build_cv_content(profile: ProfileSnapshot, *, job=None, template: str = "ats
         {"id": "achievements", "type": "achievements", "title": "Selected Achievements",
          "items": achievement_items},
     ]
-    if template == "academic":
-        sections = _reorder(sections, ["education", "experience", "projects", "achievements",
-                                       "skills", "certifications"])
-        for section in sections:
-            if section["id"] == "achievements":
-                section["title"] = "Research, Awards & Publications"
-    elif template in {"graduate"}:
-        sections = _reorder(sections, ["education", "projects", "experience", "skills",
-                                       "certifications", "achievements"])
-    elif template in {"modern_developer", "ai_engineer", "mobile_developer"}:
-        sections = _reorder(sections, ["experience", "projects", "skills", "education",
-                                       "certifications", "achievements"])
+    design = design_for(template)
+    sections = _reorder(sections, [key for key in design.order if key != "summary"])
+    for section in sections:
+        section["title"] = section_title(design.key, section["id"], section["title"])
 
     sections = [section for section in sections
                 if section.get("items") or section.get("groups")]
@@ -507,12 +476,19 @@ def profile_evidence_corpus(profile: ProfileSnapshot) -> str:
         parts.extend([project.name or "", project.description or "", project.problem_solved or "",
                       project.responsibilities or "", project.outcomes or ""])
         parts.extend(str(t) for t in (project.technologies or []))
+        for value in (project.start_date, project.end_date):
+            if isinstance(value, (date, datetime)):
+                parts.append(str(value.year))
     for cert in profile.certifications:
         if cert.verified:
             parts.extend([cert.name or "", cert.issuer or ""])
+            if isinstance(cert.issue_date, (date, datetime)):
+                parts.append(str(cert.issue_date.year))
     for item in profile.achievements:
         if item.verified:
             parts.extend([item.title or "", item.description or ""])
+            if isinstance(item.date, (date, datetime)):
+                parts.append(str(item.date.year))
     return " ".join(part for part in parts if part).lower()
 
 

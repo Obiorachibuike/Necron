@@ -38,6 +38,11 @@ CATEGORY_LABELS = {
 
 SENIORITY_RANK = {"intern": 0, "junior": 1, "mid": 2, "senior": 3, "lead": 4, "manager": 4}
 
+# Score used for a category where neither side had enough information to compare.
+NEUTRAL_SCORE = 50.0
+# Evidence coverage at which the score is reported without any shrinkage toward neutral.
+COVERAGE_FOR_FULL_CONFIDENCE = 0.6
+
 # Skills that partially overlap for credit purposes (never treated as equivalent).
 RELATED_SKILLS = {
     "react": {"javascript", "typescript", "next.js", "vue", "angular", "svelte"},
@@ -113,6 +118,7 @@ class BreakdownItem:
             "category": self.category, "label": self.label, "weight": self.weight,
             "score": None if self.score is None else round(self.score, 1),
             "status": self.status, "evidence": self.evidence[:6], "detail": self.detail,
+            "rationale": self.detail,
         }
 
 
@@ -124,6 +130,8 @@ class MatchComputation:
     strong_matches: list[str]
     partial_matches: list[str]
     missing_requirements: list[str]
+    matched_skills: list[str]
+    missing_skills: list[str]
     disqualifiers: list[str]
     unknowns: list[str]
     suggestions: list[str]
@@ -480,6 +488,30 @@ def _score_industry(snapshot: ProfileSnapshot, job: JobListing) -> BreakdownItem
                          else "The industry is outside the ones you selected.")
 
 
+def skill_name_lists(snapshot: ProfileSnapshot, job: JobListing) -> tuple[list[str], list[str]]:
+    """Requested skills the profile directly evidences, and those it does not."""
+    required, preferred, _structured = _job_skill_requirements(job)
+    user_skills = _skill_index(snapshot)
+    # Preserve the listing's own capitalisation for display ("Docker", not "docker").
+    display: dict[str, str] = {}
+    for candidate in list(job.skills or []) + list(job.requirements or []):
+        text = str(candidate).strip()
+        if text:
+            display.setdefault(normalize_skill(text), text[:60])
+    matched: list[str] = []
+    missing: list[str] = []
+    for skill in sorted(required | preferred):
+        record = user_skills.get(skill)
+        label = getattr(record, "name", skill) if record is not None else skill
+        if record is not None:
+            matched.append(str(label))
+        elif {r for r in RELATED_SKILLS.get(skill, set()) if r in user_skills}:
+            matched.append(f"{skill} (related)")
+        else:
+            missing.append(display.get(skill, skill))
+    return matched[:40], missing[:40]
+
+
 def compute_match(snapshot: ProfileSnapshot, job: JobListing) -> MatchComputation:
     items = [
         _score_skills(snapshot, job),
@@ -495,20 +527,34 @@ def compute_match(snapshot: ProfileSnapshot, job: JobListing) -> MatchComputatio
     total_weight = sum(item.weight for item in items)
     scored_weight = sum(item.weight for item in items if item.score is not None)
     coverage = scored_weight / total_weight if total_weight else 0.0
-    if scored_weight:
-        overall = sum((item.score or 0) * item.weight for item in items if item.score is not None) / scored_weight
+    # Categories with no data are treated as neutral (50), not dropped and not zeroed.
+    # Dropping them let a single 100% category produce an overall score of 100 on an empty
+    # profile, which overstated confidence; zeroing them would invent a negative signal.
+    if scored_weight and total_weight:
+        raw = sum(
+            (item.score if item.score is not None else NEUTRAL_SCORE) * item.weight
+            for item in items
+        ) / total_weight
+        # Confidence shrinkage: the less of the rubric the evidence covers, the further the
+        # score is pulled toward neutral. A thin profile therefore cannot present itself as a
+        # perfect match, and a sparse listing cannot present itself as a hopeless one.
+        scale = min(1.0, coverage / COVERAGE_FOR_FULL_CONFIDENCE)
+        overall = NEUTRAL_SCORE + (raw - NEUTRAL_SCORE) * scale
+        overall = round(max(0.0, min(100.0, overall)), 1)
+        if overall >= 80:
+            category = "strong_match"
+        elif overall >= 60:
+            category = "worth_considering"
+        elif overall >= 40:
+            category = "stretch"
+        else:
+            category = "low_match"
     else:
-        overall = 0.0
-    overall = round(max(0.0, min(100.0, overall)), 1)
-
-    if overall >= 80:
-        category = "strong_match"
-    elif overall >= 60:
-        category = "worth_considering"
-    elif overall >= 40:
-        category = "stretch"
-    else:
-        category = "low_match"
+        # Nothing on either side could be assessed. Reporting 0 would assert a failure that
+        # was never measured, so the neutral midpoint is stored with an explicit
+        # "insufficient_data" category and the UI shows "not enough data" instead of a score.
+        overall = NEUTRAL_SCORE
+        category = "insufficient_data"
 
     strong = [item.detail for item in items if item.status == "confirmed" and item.detail]
     for item in items:
@@ -540,7 +586,10 @@ def compute_match(snapshot: ProfileSnapshot, job: JobListing) -> MatchComputatio
     explanation = (
         f"Score {overall:g}/100 is a weighted average of {sum(1 for i in items if i.score is not None)} "
         f"of {len(items)} categories that had enough information (evidence coverage {coverage * 100:.0f}%, "
-        f"{confidence} confidence). Categories with no data were excluded rather than scored as zero. "
+        f"{confidence} confidence). Categories with no data count as neutral "
+        f"({NEUTRAL_SCORE:g}) rather than being assumed to match or to fail, and the score is "
+        f"pulled toward neutral when coverage is below "
+        f"{COVERAGE_FOR_FULL_CONFIDENCE * 100:.0f}%. "
         + " ".join(
             f"{item.label} {round(item.score):d}%" if item.score is not None else f"{item.label} not scored"
             for item in items
@@ -551,10 +600,13 @@ def compute_match(snapshot: ProfileSnapshot, job: JobListing) -> MatchComputatio
         explanation += (" Treat this score cautiously: your profile or the listing is missing details "
                         "that would materially change the result.")
 
+    matched_skills, missing_skills = skill_name_lists(snapshot, job)
     return MatchComputation(
         overall_score=overall, category=category, breakdown=items,
         strong_matches=_dedupe(strong)[:8], partial_matches=_dedupe(partial)[:8],
-        missing_requirements=_dedupe(missing)[:10], disqualifiers=_dedupe(disqualifiers)[:5],
+        missing_requirements=_dedupe(missing)[:10],
+        matched_skills=matched_skills, missing_skills=missing_skills,
+        disqualifiers=_dedupe(disqualifiers)[:5],
         unknowns=_dedupe(unknowns)[:8], suggestions=suggestions[:8], explanation=explanation,
         coverage=round(coverage, 2),
     )
@@ -607,6 +659,8 @@ def match_to_dict(computation: MatchComputation) -> dict:
         "strong_matches": computation.strong_matches,
         "partial_matches": computation.partial_matches,
         "missing_requirements": computation.missing_requirements,
+        "matched_skills": computation.matched_skills,
+        "missing_skills": computation.missing_skills,
         "disqualifiers": computation.disqualifiers,
         "unknowns": computation.unknowns,
         "suggestions": computation.suggestions,
@@ -633,6 +687,8 @@ def upsert_match(db: Session, user_id: str, job: JobListing,
     match.strong_matches = computation.strong_matches
     match.partial_matches = computation.partial_matches
     match.missing_requirements = computation.missing_requirements
+    match.matched_skills = computation.matched_skills
+    match.missing_skills = computation.missing_skills
     match.disqualifiers = computation.disqualifiers
     match.unknowns = computation.unknowns
     match.suggestions = computation.suggestions

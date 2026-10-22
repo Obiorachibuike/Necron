@@ -1,0 +1,8 @@
+Initial schema is generated with Alembic autogenerate against an empty PostgreSQL database.
+
+    createdb careerpilot
+    CP_DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/careerpilot alembic upgrade head
+
+Never edit an applied revision; add a new one with:
+
+    alembic revision --autogenerate -m "describe the change"

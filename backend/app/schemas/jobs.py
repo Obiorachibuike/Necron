@@ -5,6 +5,8 @@ from datetime import datetime
 
 from pydantic import Field, field_validator, model_validator
 
+from app.core.errors import ValidationAppError
+from app.core.net import validate_public_url
 from app.schemas.common import AppSchema, ORMModel, OutSchema, validate_http_url
 
 
@@ -43,7 +45,15 @@ class JobListingIn(AppSchema):
     @field_validator("source_url", "apply_url")
     @classmethod
     def _urls(cls, value: str) -> str:
-        return validate_http_url(value)
+        value = validate_http_url(value)
+        if not value:
+            return value
+        # Listings are rendered as clickable links and may later be re-fetched, so they must
+        # point at public web destinations exactly like an imported URL would.
+        try:
+            return validate_public_url(value)
+        except ValidationAppError as exc:
+            raise ValueError(exc.message) from exc
 
     @field_validator("requirements", "responsibilities", "skills", "technologies")
     @classmethod
@@ -113,6 +123,8 @@ class JobMatchOut(OutSchema):
     strong_matches: list
     partial_matches: list
     missing_requirements: list
+    matched_skills: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
     disqualifiers: list
     unknowns: list
     suggestions: list
@@ -274,6 +286,14 @@ class JobImportConfirm(AppSchema):
     analyze: bool = True
 
 
+SEARCH_WORK_ARRANGEMENTS = {"remote", "hybrid", "onsite"}
+SEARCH_EMPLOYMENT_TYPES = {"full_time", "part_time", "contract", "temporary",
+                           "internship", "volunteer", "other"}
+SEARCH_EXPERIENCE_LEVELS = {"internship", "entry", "junior", "mid", "senior", "lead",
+                            "principal", "director", "executive", "unknown"}
+SEARCH_PROVIDERS = {"greenhouse", "lever", "manual", "url"}
+
+
 class SavedSearchIn(AppSchema):
     name: str = Field(min_length=1, max_length=200)
     keywords: str = Field("", max_length=300)
@@ -295,6 +315,38 @@ class SavedSearchIn(AppSchema):
     schedule_hour_utc: int = Field(8, ge=0, le=23)
     schedule_max_results: int = Field(50, ge=1, le=200)
     notify: bool = True
+
+    @field_validator("work_arrangements")
+    @classmethod
+    def _arrangements(cls, value: list[str]) -> list[str]:
+        invalid = sorted({v for v in value if v not in SEARCH_WORK_ARRANGEMENTS})
+        if invalid:
+            raise ValueError(f"Unknown work arrangement: {', '.join(invalid)}")
+        return value
+
+    @field_validator("employment_types")
+    @classmethod
+    def _employment(cls, value: list[str]) -> list[str]:
+        invalid = sorted({v for v in value if v not in SEARCH_EMPLOYMENT_TYPES})
+        if invalid:
+            raise ValueError(f"Unknown employment type: {', '.join(invalid)}")
+        return value
+
+    @field_validator("experience_levels")
+    @classmethod
+    def _levels(cls, value: list[str]) -> list[str]:
+        invalid = sorted({v for v in value if v not in SEARCH_EXPERIENCE_LEVELS})
+        if invalid:
+            raise ValueError(f"Unknown experience level: {', '.join(invalid)}")
+        return value
+
+    @field_validator("source_providers")
+    @classmethod
+    def _providers(cls, value: list[str]) -> list[str]:
+        invalid = sorted({v for v in value if v not in SEARCH_PROVIDERS})
+        if invalid:
+            raise ValueError(f"Unknown source provider: {', '.join(invalid)}")
+        return value
 
     @field_validator("schedule_frequency")
     @classmethod

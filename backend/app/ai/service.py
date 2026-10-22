@@ -156,6 +156,26 @@ def client_for(config: AIProviderConfiguration) -> AIProviderClient:
     return build_client(config.provider, config.base_url)
 
 
+def ensure_ai_ready(db: Session, user_id: str) -> None:
+    """Fail fast when AI output is requested without a provider or data disclosure.
+
+    Generation, review and revision call this before enqueuing work, so a user is never
+    told "AI is running" when nothing would be sent, and no profile data leaves the
+    deployment without an explicit configuration plus an accepted disclosure.
+    """
+    config = get_active_config(db, user_id)
+    if not config:
+        raise ValidationAppError(
+            "No AI provider is configured. Add one in Settings → AI provider, or turn AI off "
+            "to generate from verified profile evidence only.",
+            code="ai_not_configured")
+    user = db.get(User, user_id)
+    if not user or not user.ai_disclosure_accepted_at:
+        raise ValidationAppError(
+            "Accept the AI data disclosure before sending profile content to your provider.",
+            code="ai_disclosure_required")
+
+
 def usage_today(db: Session, user_id: str) -> int:
     since = utcnow() - timedelta(hours=24)
     return int(db.scalar(select(func.coalesce(func.sum(AIUsageRecord.output_tokens), 0)).where(
@@ -208,6 +228,12 @@ async def run_chat(db: Session, user_id: str, task: str, messages: list[AIMessag
     config = config or get_active_config(db, user_id)
     if not config:
         raise AIError("not_configured", "No AI provider is configured.")
+    # Single choke point for every provider call: profile content must never be transmitted
+    # until the user has both configured a provider and accepted the data disclosure.
+    owner = db.get(User, user_id)
+    if not owner or not owner.ai_disclosure_accepted_at:
+        raise AIError("disclosure_required",
+                      "Accept the AI data disclosure before sending profile content to a provider.")
     check_limits(db, user_id, config)
     api_key = decrypt_key(config)
     if config.provider in {"openai_compatible", "openai"} and not api_key:
@@ -384,10 +410,13 @@ def delete_configuration(db: Session, user_id: str, config_id: str) -> None:
 
 def ai_status(db: Session, user_id: str) -> dict:
     settings = get_settings()
+    user = db.get(User, user_id)
+    disclosure_accepted = bool(user and user.ai_disclosure_accepted_at)
     config = get_active_config(db, user_id)
     if not config:
         return {
             "configured": False,
+            "disclosure_accepted": disclosure_accepted,
             "note": ("AI features are optional. Profile editing, manual job entry, tracking and "
                      "deterministic matching work without a provider."),
             "daily_token_limit": settings.ai_daily_output_token_limit,
@@ -398,6 +427,7 @@ def ai_status(db: Session, user_id: str) -> dict:
         config.monthly_usage_limit_tokens and used_month >= config.monthly_usage_limit_tokens)
     return {
         "configured": True,
+        "disclosure_accepted": disclosure_accepted,
         "provider": config.provider,
         "provider_label": config.label,
         "model": config.model,
