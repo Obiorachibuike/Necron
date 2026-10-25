@@ -6,11 +6,10 @@ tracker, career insights and privacy controls.
 
 Brand accent: neon green `#39FF14`. Light, dark and system themes. No purple anywhere.
 
-> **Status — read this first.** This is a working, tested implementation running locally, not
-> a deployed product. No hosting has been configured and no deployment has been performed.
-> Everything claimed below was executed in this repository; the "Known gaps" section lists what
-> was not. The application never fabricates statistics, testimonials, job inventories or
-> progress percentages.
+> **Status — read this first.** This is a working, tested implementation with Vercel Services
+> configuration, not a deployed product. No deployment has been performed. Everything claimed
+> below was executed in this repository; the "Known gaps" section lists what was not. The
+> application never fabricates statistics, testimonials, job inventories or progress percentages.
 
 ---
 
@@ -46,13 +45,14 @@ backend/
     ai/                provider adapters (OpenAI-compatible, Ollama), usage accounting
     tasks/             queue, worker loop, handlers
   migrations/          Alembic environment + initial revision (0001_initial)
-  tests/               pytest: unit + integration (174 tests)
+  tests/               pytest: unit + integration (177 tests)
 apps/web/
   src/app/             public marketing, auth, authenticated app routes, onboarding wizard
   src/components/      app shell, UI kit, cards, match score, test files
   src/lib/             API client, shared types, formatting helpers
   src/test/            Vitest setup
-docs/                  ARCHITECTURE, SECURITY, AI_PROVIDERS, JOB_SOURCES
+docs/                  ARCHITECTURE, SECURITY, AI_PROVIDERS, JOB_SOURCES, VERCEL
+vercel.json            public web + private backend services and their runtime binding
 DEPLOYMENT.md          step-by-step deployment instructions (nothing has been deployed)
 ```
 
@@ -95,16 +95,27 @@ npm install
 CP_BACKEND_URL=http://127.0.0.1:8000 npm run dev   # http://localhost:3000
 ```
 
-`next.config.ts` proxies `/api/:path*` to `CP_BACKEND_URL`, so the browser only talks to the
-Next.js origin and the session cookie stays first-party.
+A runtime Route Handler proxies `/api/v1/*` to `CP_BACKEND_URL`, so the browser only talks to the
+Next.js origin and the session cookie stays first-party. Without `CP_BACKEND_URL`, standalone
+`next dev` falls back to `http://127.0.0.1:8000`.
+
+To test both Vercel services and the generated binding together, run this from the repository root
+instead (Vercel CLI required):
+
+```bash
+vercel dev -L
+```
+
+On Vercel the `web` service binding injects `CP_BACKEND_URL` at function runtime; do not configure
+it manually. See [`docs/VERCEL.md`](docs/VERCEL.md).
 
 ---
 
 ## Tests
 
 ```bash
-cd backend && .venv/bin/python -m pytest        # 174 passed (unit + integration)
-cd apps/web && npm test                        # 9 passed (Vitest + Testing Library)
+cd backend && .venv/bin/python -m pytest        # 177 passed (unit + integration)
+cd apps/web && npm test                        # 15 passed (Vitest + Testing Library)
 cd apps/web && npm run typecheck && npm run build
 ```
 
@@ -151,7 +162,8 @@ Settings are environment variables with the `CP_` prefix (see `backend/app/core/
 | `CP_RATE_LIMIT_ENABLED` | `true` | In-process per-user/IP limits. |
 | `CP_AI_PRICING_JSON` | `{}` | Optional price table; without it the UI shows tokens and no cost estimate. |
 
-Frontend: `CP_BACKEND_URL` (server-side only, used by the rewrite proxy).
+Frontend: `CP_BACKEND_URL` (server-side only, used by the runtime proxy). Vercel injects it from
+the `web` → `backend` service binding; setting it manually is only for standalone local runs.
 
 ---
 
@@ -223,8 +235,9 @@ Frontend: `CP_BACKEND_URL` (server-side only, used by the rewrite proxy).
 
 These are deliberate statements of what is **not** done. Do not treat them as delivered:
 
-- **Nothing is deployed.** No hosting, domain, TLS certificate, database service or email
-  provider is configured. `DEPLOYMENT.md` gives the steps; no step has been executed.
+- **Nothing is deployed.** Vercel Services configuration is included, but no deployment, domain,
+  database service or email provider has been provisioned. `DEPLOYMENT.md` and `docs/VERCEL.md`
+  give the steps; durable media storage and a production worker still need separate resources.
 - **Transactional email is unconfigured.** With no SMTP settings, verification and reset links
   are logged server-side (and returned by the API only when `CP_EXPOSE_DEV_TOKENS=true`).
 - **AI is unconfigured by default.** No shared key is shipped. Users add their own provider in
@@ -259,6 +272,7 @@ These are deliberate statements of what is **not** done. Do not treat them as de
 ## Documentation
 
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) — environment, migrations, worker, reverse proxy, backups.
+- [`docs/VERCEL.md`](docs/VERCEL.md) — services, public routing, runtime binding, Vercel limits.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — components, data model, request flows.
 - [`docs/SECURITY.md`](docs/SECURITY.md) — threat model and controls, with honest limits.
 - [`docs/AI_PROVIDERS.md`](docs/AI_PROVIDERS.md) — provider setup, privacy, failure behaviour.

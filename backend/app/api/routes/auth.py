@@ -81,7 +81,7 @@ async def register(payload: RegisterRequest, request: Request, response: Respons
                          payload.display_name)
     dev_url = None
     if not user.email_verified:
-        dev_url = await send_verification(db, user, settings.frontend_origin)
+        dev_url = await send_verification(db, user, settings.effective_frontend_origin)
     session, token, csrf = create_session(
         db, user, user_agent=request.headers.get("user-agent", ""),
         ip=request.client.host if request.client else "",
@@ -144,7 +144,7 @@ async def update_password(payload: ChangePasswordRequest, ctx: CurrentAuth,
 async def forgot_password(payload: ForgotPasswordRequest, db: DbSession) -> LinkMessage:
     settings = get_settings()
     link = await request_password_reset(db, normalize_email(str(payload.email)),
-                                        settings.frontend_origin)
+                                        settings.effective_frontend_origin)
     return LinkMessage(
         message=("If an account exists for that email, a reset link has been sent. "
                  "Check your spam folder if it does not arrive."),
@@ -172,7 +172,7 @@ async def resend(user: CurrentUser, db: DbSession) -> LinkMessage:
     settings = get_settings()
     if user.email_verified:
         return LinkMessage(message="This email address is already verified.")
-    raw_link = await send_verification(db, user, settings.frontend_origin)
+    raw_link = await send_verification(db, user, settings.effective_frontend_origin)
     return LinkMessage(
         message=("Verification email sent." if settings.email_configured
                  else "Email delivery is not configured on this deployment."),

@@ -43,7 +43,7 @@ class OriginAndSizeMiddleware(BaseHTTPMiddleware):
         settings = get_settings()
         if request.method in MUTATING and request.url.path.startswith("/api/"):
             origin = request.headers.get("origin")
-            allowed = {settings.frontend_origin.rstrip("/")}
+            allowed = {settings.effective_frontend_origin.rstrip("/")}
             if origin and origin.rstrip("/") not in allowed:
                 return JSONResponse(
                     status_code=403,

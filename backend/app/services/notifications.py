@@ -39,7 +39,8 @@ def create_notification(db: Session, user_id: str, kind: str, title: str, body: 
         import asyncio
 
         async def _send() -> None:
-            subject, text = notification_email(title, body, f"{settings.frontend_origin}{link}")
+            subject, text = notification_email(
+                title, body, f"{settings.effective_frontend_origin}{link}")
             from app.models import User
 
             user = db.get(User, user_id)

@@ -1,6 +1,7 @@
 """Application configuration, loaded from environment variables only."""
 from __future__ import annotations
 
+import os
 import secrets
 from functools import lru_cache
 from pathlib import Path
@@ -98,6 +99,15 @@ class Settings(BaseSettings):
         return self.app_env.lower() in {"production", "prod"}
 
     @property
+    def effective_frontend_origin(self) -> str:
+        """Public origin, following each Vercel deployment unless explicitly configured."""
+        if "frontend_origin" not in self.model_fields_set:
+            vercel_url = os.environ.get("VERCEL_URL", "").strip()
+            if vercel_url:
+                return f"https://{vercel_url}"
+        return self.frontend_origin
+
+    @property
     def secure_cookies(self) -> bool:
         if self.cookie_secure is not None:
             return self.cookie_secure
@@ -123,6 +133,15 @@ class Settings(BaseSettings):
         warning.
         """
         hosts = self.host_list
+        vercel_url = os.environ.get("VERCEL_URL", "").strip()
+        if vercel_url:
+            hosts.append(vercel_url)
+        if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+            # Caller-side service bindings reach FastAPI on a generated host such as
+            # backend.<deployment>.services.vercel-infra.com. This does not expose
+            # the backend publicly; Vercel still requires the binding for access.
+            hosts.append("*.services.vercel-infra.com")
+        hosts = list(dict.fromkeys(hosts))
         if "*" not in hosts:
             return hosts or ["localhost", "127.0.0.1"]
         if self.trust_all_hosts:

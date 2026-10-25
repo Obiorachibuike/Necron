@@ -1,8 +1,11 @@
 # Deployment guide
 
-This document describes how to deploy CareerPilot AI. **Nothing here has been executed for this
-repository**: there is no hosted instance, no domain, no managed database and no email provider
-configured. Treat every step as a checklist, and verify each one in your own environment.
+This document describes how to deploy CareerPilot AI. **None of these deployment steps has been
+executed for this repository**: there is no hosted instance, no domain, no managed database and no
+email provider configured. Treat every step as a checklist, and verify each one in your own
+environment. For the included Vercel Services configuration, also read
+[`docs/VERCEL.md`](docs/VERCEL.md); its two HTTP services do not replace the stateful requirements
+below.
 
 The application is three processes plus two stateful dependencies:
 
@@ -172,13 +175,14 @@ whether a worker looks offline.
 ```bash
 cd apps/web
 npm ci
-CP_BACKEND_URL=http://127.0.0.1:8000 npm run build
+npm run build
 CP_BACKEND_URL=http://127.0.0.1:8000 npm run start   # serves 0.0.0.0:3000
 ```
 
-`CP_BACKEND_URL` is read server-side by the Next.js rewrite for `/api/:path*`. The browser never
-calls the backend directly, so the session cookie remains first-party and no CORS configuration
-is needed. Set `CP_FRONTEND_ORIGIN` on the backend to the public frontend URL.
+`CP_BACKEND_URL` is read at request time by the Next.js Route Handler for `/api/v1/*`. The browser
+never calls the backend directly, so the session cookie remains first-party and no CORS
+configuration is needed. Set `CP_FRONTEND_ORIGIN` on the backend to the public frontend URL. On
+Vercel, the `web` → `backend` binding supplies `CP_BACKEND_URL`; do not set it manually there.
 
 If the backend is on another machine, keep the rewrite target on a private network and expose
 only the Next.js port publicly:

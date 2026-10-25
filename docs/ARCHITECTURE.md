@@ -28,8 +28,9 @@ queue so the system needs no additional broker.
 ## Request path
 
 1. The browser calls `/api/v1/...` on the Next.js origin.
-2. `next.config.ts` rewrites `/api/:path*` to `CP_BACKEND_URL`, so cookies stay first-party and
-   the backend is not exposed to the browser.
+2. A Next.js runtime Route Handler forwards `/api/v1/*` to `CP_BACKEND_URL`, so cookies stay
+   first-party and the backend is not exposed to the browser. On Vercel, a caller-side service
+   binding injects that URL into `web`; the backend has no public rewrite.
 3. FastAPI middleware order: request ID/logging → host allowlist → CORS → origin+size checks →
    rate limiting → router.
 4. Routes depend on `CurrentUser` (session resolution) and `DbSession`. Every query filters by

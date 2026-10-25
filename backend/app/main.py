@@ -93,7 +93,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_origin.rstrip("/")],
+        allow_origins=[settings.effective_frontend_origin.rstrip("/")],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "X-CSRF-Token", "X-Requested-With", "X-Request-ID"],
