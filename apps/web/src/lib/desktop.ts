@@ -30,7 +30,7 @@ export const PLATFORMS: Record<DesktopPlatform, PlatformInfo> = {
     label: "Windows",
     shortLabel: "Windows 10/11",
     requirement: "Windows 10 or later",
-    note: "Per-user installer — no administrator rights required. The same release also carries an ARM64 installer.",
+    note: "Per-user installer — no administrator rights required. A single installer covering both x64 and ARM64 is published too.",
     defaultArch: "x64",
     archLabel: { x64: "Intel / AMD (x64)", arm64: "ARM64 (Snapdragon, Surface)" },
   },

@@ -87,7 +87,7 @@ architecture macros per target, the final names are:
 
 | Platform | Files |
 | --- | --- |
-| Windows | `CareerPilot-1.0.0-win-x64.exe`, `CareerPilot-1.0.0-win-arm64.exe` |
+| Windows | `CareerPilot-1.0.0-win-x64.exe`, `CareerPilot-1.0.0-win-arm64.exe`, `CareerPilot-1.0.0-win.exe` (combined x64 + ARM64 installer) |
 | macOS | `CareerPilot-1.0.0-mac-arm64.dmg`, `CareerPilot-1.0.0-mac-x64.dmg`, matching `.zip` archives |
 | Linux | `CareerPilot-1.0.0-linux-x86_64.AppImage`, `CareerPilot-1.0.0-linux-amd64.deb` |
 
