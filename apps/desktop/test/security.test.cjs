@@ -19,7 +19,8 @@ test("main process never enables node integration or webviews", () => {
   assert.doesNotMatch(main, /contextIsolation:\s*false/);
   assert.match(main, /sandbox:\s*true/);
   assert.match(main, /webviewTag:\s*false/);
-  assert.match(main, /app\.enableSandbox\(\)/);
+  // app.enableSandbox() was removed in Electron 20; sandboxing is configured per window.
+  assert.doesNotMatch(main, /app\.enableSandbox\(\)/);
 });
 
 test("remote workspace windows have no preload bridge", () => {

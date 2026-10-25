@@ -55,7 +55,6 @@ const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 app.setName(APP_NAME);
 if (process.platform === "win32") app.setAppUserModelId(APP_ID);
-app.enableSandbox();
 
 let settings = null;
 let settingsFile = "";

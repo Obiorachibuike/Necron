@@ -12,6 +12,7 @@ const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const Module = require("node:module");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -64,7 +65,7 @@ class FakeBrowserWindow extends EventEmitter {
     return windows.find((window) => !window.destroyed) ?? null;
   }
   loadFile(file) {
-    this.webContents.url = `file://${file}`;
+    this.webContents.url = pathToFileURL(file).href;
     return Promise.resolve();
   }
   loadURL(url) {
@@ -142,7 +143,6 @@ Object.assign(app, {
   isReady: () => true,
   quit: () => app.emit("before-quit"),
   relaunch: () => undefined,
-  enableSandbox: () => undefined,
   setName: () => undefined,
   setAppUserModelId: () => undefined,
   setBadgeCount: () => undefined,
@@ -233,7 +233,7 @@ test("first run connects a workspace and opens the main window", async (t) => {
   assert.match(welcome.webContents.url, /renderer\/welcome\.html$/);
 
   const localEvent = {
-    senderFrame: { url: `file://${path.join(ROOT, "src", "renderer", "welcome.html")}` },
+    senderFrame: { url: pathToFileURL(path.join(ROOT, "src", "renderer", "welcome.html")).href },
   };
 
   const state = await handlers.get("cp:state")(localEvent);
@@ -285,7 +285,7 @@ test("first run connects a workspace and opens the main window", async (t) => {
 test("preferences round-trip through IPC", async () => {
   await waitFor(() => handlers.has("cp:set-preference"));
   const localEvent = {
-    senderFrame: { url: `file://${path.join(ROOT, "src", "renderer", "settings.html")}` },
+    senderFrame: { url: pathToFileURL(path.join(ROOT, "src", "renderer", "settings.html")).href },
   };
   const updated = await handlers.get("cp:set-preference")(localEvent, "notificationsEnabled", false);
   assert.equal(updated.notificationsEnabled, false);
