@@ -17,6 +17,8 @@ coverage.xml
 # Local SQLite databases and runtime media (never commit user data)
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 backend/media/
@@ -38,6 +40,13 @@ dist/
 *.tsbuildinfo
 apps/web/.env.local
 apps/web/.env*.local
+
+# Packaging output (installers are published as GitHub Release assets, not committed)
+apps/desktop/release/
+
+# The desktop icon set is generated but intentionally tracked so builds do not need Pillow
+!apps/desktop/build/
+!apps/desktop/build/**
 npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*

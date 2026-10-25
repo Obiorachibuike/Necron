@@ -145,10 +145,10 @@ export default function HowItWorksPage() {
         <div className="cp-card flex flex-col items-start justify-between gap-4 p-6 sm:flex-row sm:items-center">
           <div>
             <h2 className="text-xl font-semibold">See it with your own history</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">Onboarding takes a few minutes; you can stop and resume.</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">Install for Windows, macOS or Linux. Onboarding takes a few minutes and can be resumed.</p>
           </div>
-          <Link href="/sign-up" className={buttonStyles({ size: "lg" })}>
-            Start onboarding <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          <Link href="/download" className={buttonStyles({ size: "lg" })}>
+            Download CareerPilot <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </div>
       </section>

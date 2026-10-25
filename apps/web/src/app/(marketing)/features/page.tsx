@@ -197,10 +197,10 @@ export default function FeaturesPage() {
         <div className="cp-card flex flex-col items-start justify-between gap-4 p-6 sm:flex-row sm:items-center">
           <div>
             <h2 className="text-xl font-semibold">Ready to see your own evidence chain?</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">Start with the free workspace. No provider required.</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">Install the desktop app, then connect the free workspace. No AI provider required.</p>
           </div>
-          <Link href="/sign-up" className={buttonStyles({ size: "lg" })}>
-            Create account <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          <Link href="/download" className={buttonStyles({ size: "lg" })}>
+            Download the app <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </div>
       </section>

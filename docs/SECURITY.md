@@ -148,3 +148,25 @@ See [`AI_PROVIDERS.md`](AI_PROVIDERS.md) for the full workflow.
 
 If you deploy this application, replace this section with a security contact address. No contact
 address is claimed here because none has been configured.
+
+## Desktop shell boundaries
+
+The Electron shell is deliberately split into trusted local UI and untrusted remote
+content.
+
+| Control | Implementation |
+| --- | --- |
+| Renderer isolation | Workspace window: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, `webviewTag: false`, no preload. |
+| IPC authorisation | `ipcMain.handle` wrappers reject senders whose frame is not a local `file://…/renderer/…` page. The remote app has no bridge. |
+| Navigation | Same-origin navigations stay in the window; other origins are blocked and passed to `shell.openExternal` only after an `http`/`https`/`mailto` check. `window.open` is denied and handled the same way. |
+| Local page CSP | `default-src 'none'`, `script-src 'self'`, `connect-src 'none'`; the pages reach the network only through validated IPC. |
+| Permissions | All permission requests are denied except `clipboard-sanitized-write`. |
+| Storage | Session cookies in an isolated Chromium partition; settings contain no secrets and are written atomically with mode `0600`; corrupt settings are preserved for debugging. |
+| Downloads | Filename sanitisation strips both path separators, control characters and Windows-reserved characters; collisions get a numeric suffix. |
+| Updates | GitHub Releases over https via `electron-updater`; update metadata is only trusted from the configured repository. |
+| Telemetry | None. No analytics, crash reporter or third-party scripts are included in the shell. |
+
+Honest limits: release builds are currently unsigned and unnotarized. That is a
+distribution-integrity gap, documented in `apps/desktop/README.md`; checksums are attached
+to each release so a user can verify a download out of band. Desktop-specific gaps (no real
+OS-level end-to-end tests, no signing) are listed in the root README.

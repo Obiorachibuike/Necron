@@ -160,3 +160,36 @@ with text as well as colour, and motion respects `prefers-reduced-motion`.
   failures degrade to labelled deterministic output rather than fabricated content.
 - **In-process rate limiting** — simple and dependency-free; replace with a shared limiter at the
   proxy if you run many API processes and need global limits.
+
+## Desktop shell
+
+`apps/desktop` is a fourth process in development and an alternative front door in
+production. It does not reimplement the product: it loads the same Next.js origin in a
+Chromium `BrowserWindow` with a separate persistent session partition.
+
+```
+┌──────────────────────────────┐
+│ Electron main (Node)         │  tray, menus, deep links, downloads, notifications,
+│  src/main.cjs                │  auto-update, window bounds, settings file
+└──────────────┬───────────────┘
+               │ creates
+      ┌────────┴─────────────────────────────┐
+      ▼                                      ▼
+┌───────────────────────┐          ┌──────────────────────────┐
+│ Workspace BrowserWindow│          │ Local shell windows      │
+│ remote Next.js origin  │          │ file:// renderer/*.html  │
+│ sandboxed, no preload  │          │ preload + strict CSP IPC │
+└───────────┬───────────┘          └──────────────────────────┘
+            │ same-origin /api/* through Next
+            ▼
+      FastAPI + PostgreSQL (unchanged)
+```
+
+- Sessions live in `persist:careerpilot`; the shell calls `session.fetch()` (not
+  `net.fetch()`) so notification polling and the post-auth landing route see the same
+  cookies as the window.
+- Downloads are handled in `will-download`, sanitised, and written to the OS downloads
+  folder without overwriting existing files.
+- The marketing site's `/download/[platform]/[arch]` route maps a platform/architecture
+  pair to the newest matching GitHub Release asset. The site and shell share version and
+  artifact naming through `apps/web/src/lib/desktop.ts` and a Vitest consistency test.

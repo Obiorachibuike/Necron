@@ -125,6 +125,7 @@ export default function PricingPage() {
               <Info className="h-4 w-4 text-[var(--brand)]" aria-hidden="true" /> What&apos;s included in every plan
             </h2>
             <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
+              <li>The desktop app for Windows, macOS and Linux is a free client; there is no separate desktop licence.</li>
               <li>Your data is never sold. There is no advertising or analytics tracking.</li>
               <li>AI is optional and requires explicit configuration and disclosure.</li>
               <li>Exports and deletion are available without a support request.</li>
