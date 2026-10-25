@@ -118,12 +118,6 @@
             "x64",
             "arm64"
           ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
         }
       ],
       "icon": "build/icon.ico",
@@ -139,9 +133,6 @@
       "shortcutName": "CareerPilot",
       "deleteAppDataOnUninstall": false,
       "runAfterFinish": true
-    },
-    "portable": {
-      "artifactName": "${productName}-${version}-portable-${arch}.${ext}"
     },
     "mac": {
       "target": [

@@ -31,16 +31,16 @@ describe("desktop release metadata", () => {
     expect(desktopPackage.build.artifactName).toBe(
       "${productName}-${version}-${os}-${arch}.${ext}"
     );
-    expect(assetName("windows", "x64")).toBe("CareerPilot-1.0.0-windows-x64.exe");
-    expect(assetName("windows", "arm64")).toBe("CareerPilot-1.0.0-windows-arm64.exe");
-    expect(assetName("windows", "x64", "portable")).toBe("CareerPilot-1.0.0-portable-x64.exe");
+    // electron-builder expands ${os} to "win" on Windows.
+    expect(assetName("windows", "x64")).toBe("CareerPilot-1.0.0-win-x64.exe");
+    expect(assetName("windows", "arm64")).toBe("CareerPilot-1.0.0-win-arm64.exe");
     expect(assetName("macos", "arm64")).toBe("CareerPilot-1.0.0-mac-arm64.dmg");
     expect(assetName("macos", "x64", "zip")).toBe("CareerPilot-1.0.0-mac-x64.zip");
     expect(assetName("linux", "x64")).toBe("CareerPilot-1.0.0-linux-x86_64.AppImage");
     expect(assetName("linux", "x64", "deb")).toBe("CareerPilot-1.0.0-linux-amd64.deb");
-    expect(desktopPackage.build.portable.artifactName).toBe(
-      "${productName}-${version}-portable-${arch}.${ext}"
-    );
+    expect(desktopPackage.build.win.target).toEqual([
+      { target: "nsis", arch: ["x64", "arm64"] },
+    ]);
   });
 
   it("points downloads at the redirect route, not a hard-coded asset", () => {
@@ -107,7 +107,7 @@ describe("download route parameters", () => {
   });
 
   it("keeps formats within what the platform ships", () => {
-    expect(formatFromQuery("windows", "portable")).toBe("portable");
+    expect(formatFromQuery("windows", "portable")).toBe("installer");
     expect(formatFromQuery("windows", "deb")).toBe("installer");
     expect(formatFromQuery("macos", "zip")).toBe("zip");
     expect(formatFromQuery("macos", null)).toBe("dmg");

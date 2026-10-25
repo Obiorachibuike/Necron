@@ -127,7 +127,7 @@ Packaging:
 
 ```bash
 npm run dist:linux            # AppImage + deb
-npm run dist:win              # NSIS installer + portable exe
+npm run dist:win              # NSIS installer (x64, ARM64)
 npm run dist:mac              # DMG + ZIP (Apple silicon and Intel)
 ```
 

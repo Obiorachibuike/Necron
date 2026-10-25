@@ -77,7 +77,7 @@ set and the tray images. It needs Pillow (`pip install pillow`) but is not part 
 
 ```bash
 npm run dist:linux    # AppImage + deb
-npm run dist:win      # NSIS installer (x64, arm64) + portable x64
+npm run dist:win      # NSIS installer (x64, ARM64)
 npm run dist:mac      # DMG + ZIP (Apple silicon and Intel)
 ```
 
@@ -87,7 +87,7 @@ architecture macros per target, the final names are:
 
 | Platform | Files |
 | --- | --- |
-| Windows | `CareerPilot-1.0.0-windows-x64.exe`, `CareerPilot-1.0.0-windows-arm64.exe`, `CareerPilot-1.0.0-portable-x64.exe` |
+| Windows | `CareerPilot-1.0.0-win-x64.exe`, `CareerPilot-1.0.0-win-arm64.exe` |
 | macOS | `CareerPilot-1.0.0-mac-arm64.dmg`, `CareerPilot-1.0.0-mac-x64.dmg`, matching `.zip` archives |
 | Linux | `CareerPilot-1.0.0-linux-x86_64.AppImage`, `CareerPilot-1.0.0-linux-amd64.deb` |
 

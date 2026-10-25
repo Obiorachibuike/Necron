@@ -33,7 +33,6 @@ const BUILDS: Record<DesktopPlatform, { arch: DesktopArch; format: DownloadForma
   windows: [
     { arch: "x64", format: "installer", label: "Windows installer · x64" },
     { arch: "arm64", format: "installer", label: "Windows installer · ARM64" },
-    { arch: "x64", format: "portable", label: "Portable executable · x64" },
   ],
   macos: [
     { arch: "arm64", format: "dmg", label: "Disk image · Apple silicon" },

@@ -8,9 +8,9 @@ const asset = (name: string, size = 90_000_000): ReleaseAsset => ({
 });
 
 const RELEASE_ASSETS = [
-  asset("CareerPilot-1.0.0-windows-x64.exe"),
-  asset("CareerPilot-1.0.0-windows-arm64.exe"),
-  asset("CareerPilot-1.0.0-portable-x64.exe"),
+  asset("CareerPilot-1.0.0-win-x64.exe"),
+  asset("CareerPilot-1.0.0-win-arm64.exe"),
+  asset("CareerPilot-1.0.0-win.exe", 200_000_000),
   asset("CareerPilot-1.0.0-mac-x64.dmg"),
   asset("CareerPilot-1.0.0-mac-arm64.dmg"),
   asset("CareerPilot-1.0.0-mac-arm64.zip"),
@@ -23,16 +23,18 @@ const RELEASE_ASSETS = [
 ];
 
 describe("release asset selection", () => {
-  it("picks the Windows installer, never the portable build", () => {
+  it("picks the per-architecture Windows installer, never the combined exe", () => {
     expect(pickAsset(RELEASE_ASSETS, "windows", "x64", "installer")?.name).toBe(
-      "CareerPilot-1.0.0-windows-x64.exe"
+      "CareerPilot-1.0.0-win-x64.exe"
     );
     expect(pickAsset(RELEASE_ASSETS, "windows", "arm64", "installer")?.name).toBe(
-      "CareerPilot-1.0.0-windows-arm64.exe"
+      "CareerPilot-1.0.0-win-arm64.exe"
     );
-    expect(pickAsset(RELEASE_ASSETS, "windows", "x64", "portable")?.name).toBe(
-      "CareerPilot-1.0.0-portable-x64.exe"
-    );
+    // The arch-less combined installer is usable, but a native build is preferred.
+    expect(
+      pickAsset([asset("CareerPilot-1.0.0-win.exe", 200_000_000)], "windows", "x64", "installer")
+        ?.name
+    ).toBe("CareerPilot-1.0.0-win.exe");
   });
 
   it("respects macOS architecture and format", () => {
@@ -65,16 +67,16 @@ describe("release asset selection", () => {
   it("returns null instead of guessing when nothing matches", () => {
     expect(pickAsset([], "windows", "x64", "installer")).toBeNull();
     expect(pickAsset([asset("CareerPilot-1.0.0-linux-x86_64.AppImage")], "windows", "x64", "installer")).toBeNull();
-    expect(pickAsset([asset("CareerPilot-1.0.0-windows-arm64.exe")], "windows", "x64", "installer")).toBeNull();
+    expect(pickAsset([asset("CareerPilot-1.0.0-win-arm64.exe")], "windows", "x64", "installer")).toBeNull();
   });
 
   it("prefers a named setup artifact when several match", () => {
     const assets = [
-      asset("CareerPilot-1.0.0-windows-x64.exe"),
-      asset("CareerPilot-Setup-1.0.0-windows-x64.exe"),
+      asset("CareerPilot-1.0.0-win-x64.exe"),
+      asset("CareerPilot-Setup-1.0.0-win-x64.exe"),
     ];
     expect(pickAsset(assets, "windows", "x64", "installer")?.name).toBe(
-      "CareerPilot-Setup-1.0.0-windows-x64.exe"
+      "CareerPilot-Setup-1.0.0-win-x64.exe"
     );
   });
 });

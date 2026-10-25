@@ -20,8 +20,8 @@ const PLATFORM_TOKENS: Record<DesktopPlatform, string[]> = {
 function extensionMatches(name: string, platform: DesktopPlatform, format: DownloadFormat): boolean {
   const lower = name.toLowerCase();
   if (platform === "windows") {
-    if (!lower.endsWith(".exe")) return false;
-    return format === "portable" ? lower.includes("portable") : !lower.includes("portable");
+    // Reject portable/combined builds: the installer is the supported path.
+    return lower.endsWith(".exe") && !lower.includes("portable");
   }
   if (platform === "macos") {
     return format === "zip" ? lower.endsWith(".zip") : lower.endsWith(".dmg");

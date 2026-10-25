@@ -127,7 +127,7 @@ jobs:
           body: |
             CareerPilot Desktop ${{ github.ref_name }} — a native window for your CareerPilot workspace.
 
-            **Windows** — `CareerPilot-*-windows-x64.exe` (also ARM64 and portable builds)
+            **Windows** — `CareerPilot-*-win-x64.exe` (NSIS) and `CareerPilot-*-win-arm64.exe`
             **macOS** — `CareerPilot-*-mac-arm64.dmg` (Apple silicon) and `CareerPilot-*-mac-x64.dmg` (Intel)
             **Linux** — `CareerPilot-*-linux-x86_64.AppImage` and `CareerPilot-*-linux-amd64.deb`
 

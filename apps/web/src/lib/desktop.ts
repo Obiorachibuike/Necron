@@ -14,7 +14,7 @@ export const ASSET_BASE = `${REPO_URL}/releases/download/${DESKTOP_TAG}`;
 
 export type DesktopPlatform = "windows" | "macos" | "linux";
 export type DesktopArch = "x64" | "arm64";
-export type DownloadFormat = "installer" | "portable" | "appimage" | "deb" | "dmg" | "zip";
+export type DownloadFormat = "installer" | "appimage" | "deb" | "dmg" | "zip";
 
 export interface PlatformInfo {
   label: string;
@@ -30,7 +30,7 @@ export const PLATFORMS: Record<DesktopPlatform, PlatformInfo> = {
     label: "Windows",
     shortLabel: "Windows 10/11",
     requirement: "Windows 10 or later",
-    note: "Per-user installer — no administrator rights required. A portable executable is also available.",
+    note: "Per-user installer — no administrator rights required. The same release also carries an ARM64 installer.",
     defaultArch: "x64",
     archLabel: { x64: "Intel / AMD (x64)", arm64: "ARM64 (Snapdragon, Surface)" },
   },
@@ -67,10 +67,8 @@ export function assetName(
   const version = DESKTOP_VERSION;
   switch (platform) {
     case "windows":
-      // electron-builder expands ${os} to "windows" and ${arch} to x64/arm64 for .exe.
-      return format === "portable"
-        ? `CareerPilot-${version}-portable-${arch}.exe`
-        : `CareerPilot-${version}-windows-${arch}.exe`;
+      // electron-builder expands ${os} to "win" on Windows (not "windows").
+      return `CareerPilot-${version}-win-${arch}.exe`;
     case "macos":
       return format === "zip"
         ? `CareerPilot-${version}-mac-${arch}.zip`
@@ -107,8 +105,6 @@ export function downloadHref(
 
 export function formatLabel(format: DownloadFormat): string {
   switch (format) {
-    case "portable":
-      return "Portable .exe";
     case "appimage":
       return "AppImage";
     case "deb":
@@ -169,7 +165,7 @@ export function formatFromQuery(
   value: string | null
 ): DownloadFormat {
   const requested = (value ?? "").toLowerCase();
-  if (platform === "windows") return requested === "portable" ? "portable" : "installer";
+  if (platform === "windows") return "installer";
   if (platform === "macos") return requested === "zip" ? "zip" : "dmg";
   return requested === "deb" ? "deb" : "appimage";
 }
