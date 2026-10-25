@@ -4,13 +4,19 @@ Multi-user AI career-management application: job discovery, explainable matching
 review-gated application studio (CV / cover letter), interview practice, an application
 tracker, career insights and privacy controls.
 
+It ships as a **web app** and as **CareerPilot Desktop** — a native Electron shell for
+Windows, macOS and Linux that opens the same workspace with a tray, native notifications,
+menu shortcuts, deep links, document downloads and update checks. The marketing site at
+`apps/web` includes a download page whose buttons resolve real GitHub Release assets.
+
 Brand accent: neon green `#39FF14`. Light, dark and system themes. No purple anywhere.
 
 > **Status — read this first.** This is a working, tested implementation running locally, not
 > a deployed product. No hosting has been configured and no deployment has been performed.
-> Everything claimed below was executed in this repository; the "Known gaps" section lists what
-> was not. The application never fabricates statistics, testimonials, job inventories or
-> progress percentages.
+> Desktop installers are built by CI but are **unsigned and unnotarized**, and they are not
+> hosted first-party. Everything claimed below was executed in this repository; the "Known
+> gaps" section lists what was not. The application never fabricates statistics, testimonials,
+> job inventories or progress percentages.
 
 ---
 
@@ -19,6 +25,7 @@ Brand accent: neon green `#39FF14`. Light, dark and system themes. No purple any
 | Layer | Technology |
 | --- | --- |
 | Frontend | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS, TanStack Query, Recharts, Lucide, React Hook Form + Zod |
+| Desktop | Electron 38, electron-updater, electron-builder (NSIS, DMG/ZIP, AppImage/deb), Node test runner |
 | Backend | FastAPI, Pydantic v2, SQLAlchemy 2, Alembic, pytest, httpx |
 | Database | PostgreSQL (authoritative store); SQLite supported for local development and tests |
 | Documents | `python-docx` (DOCX), ReportLab (PDF), plain text, LaTeX source |
@@ -48,12 +55,20 @@ backend/
   migrations/          Alembic environment + initial revision (0001_initial)
   tests/               pytest: unit + integration (174 tests)
 apps/web/
-  src/app/             public marketing, auth, authenticated app routes, onboarding wizard
-  src/components/      app shell, UI kit, cards, match score, test files
-  src/lib/             API client, shared types, formatting helpers
+  src/app/             marketing site (including /download), auth, app routes, onboarding
+  src/app/download/    redirect route that resolves the current GitHub Release asset
+  src/components/      app shell, UI kit, cards, download buttons, match score
+  src/lib/             API client, shared types, desktop release metadata
   src/test/            Vitest setup
-docs/                  ARCHITECTURE, SECURITY, AI_PROVIDERS, JOB_SOURCES
-DEPLOYMENT.md          step-by-step deployment instructions (nothing has been deployed)
+apps/desktop/
+  src/main.cjs         Electron main process: windows, tray, menus, IPC, updates, downloads
+  src/preload.cjs      fixed contextBridge API for the shell's local windows
+  src/lib/             tested URL, settings, file and notification helpers
+  src/renderer/        connect-workspace, desktop settings, offline and loading pages
+  build/               generated app/tray icons and macOS entitlements
+  test/                node:test suites (48 tests, incl. main-process smoke test)
+docs/                  ARCHITECTURE, SECURITY, AI_PROVIDERS, JOB_SOURCES, WEBSITE_DEPLOYMENT
+DEPLOYMENT.md          backend/web deployment instructions (nothing has been deployed)
 ```
 
 ---
@@ -98,14 +113,37 @@ CP_BACKEND_URL=http://127.0.0.1:8000 npm run dev   # http://localhost:3000
 `next.config.ts` proxies `/api/:path*` to `CP_BACKEND_URL`, so the browser only talks to the
 Next.js origin and the session cookie stays first-party.
 
+### Desktop app
+
+```bash
+cd apps/desktop
+npm install
+npm test                      # 48 tests, no display required
+npm start                     # opens the connect-workspace window
+# connect http://localhost:3000 after the web and backend processes are running
+```
+
+Packaging:
+
+```bash
+npm run dist:linux            # AppImage + deb
+npm run dist:win              # NSIS installer + portable exe
+npm run dist:mac              # DMG + ZIP (Apple silicon and Intel)
+```
+
+The shell is a client only: it requires a workspace URL and cannot run the backend itself.
+See [`apps/desktop/README.md`](apps/desktop/README.md) for the security model, deep links,
+update behaviour, signing steps and exact artifact names.
+
 ---
 
 ## Tests
 
 ```bash
 cd backend && .venv/bin/python -m pytest        # 174 passed (unit + integration)
-cd apps/web && npm test                        # 9 passed (Vitest + Testing Library)
+cd apps/web && npm test                        # 25 passed (Vitest + Testing Library)
 cd apps/web && npm run typecheck && npm run build
+cd apps/desktop && npm test                    # 48 passed (node:test)
 ```
 
 What the suites cover:
@@ -123,10 +161,17 @@ What the suites cover:
 - **PostgreSQL** — the initial migration was generated against an empty PostgreSQL 16.2
   database and verified with `upgrade head` (41/41 tables), a second no-op upgrade, and a
   `downgrade base` → `upgrade head` round trip.
+- **Desktop** — URL/origin/allowlist rules, settings persistence and file permissions,
+  download sanitisation, notification selection, structural isolation checks (sandbox,
+  context isolation, no preload on the remote window, IPC sender validation, CSP on local
+  pages) and a main-process smoke test that drives boot → health check → save workspace →
+  main window with an Electron stub.
 - **Not covered** — there is no browser-driven end-to-end suite (Playwright) because no
   browser runtime is installed in the development environment; the frontend is covered by
-  component/unit tests plus a production build. Live AI calls are not exercised: tests use an
-  unreachable local endpoint to prove the app reports the failure honestly.
+  component/unit tests plus a production build. Real Electron windows, tray rendering, OS
+  notification delivery and installer execution are not exercised in CI. Live AI calls are
+  not exercised: tests use an unreachable local endpoint to prove the app reports the
+  failure honestly.
 
 ---
 
@@ -151,7 +196,8 @@ Settings are environment variables with the `CP_` prefix (see `backend/app/core/
 | `CP_RATE_LIMIT_ENABLED` | `true` | In-process per-user/IP limits. |
 | `CP_AI_PRICING_JSON` | `{}` | Optional price table; without it the UI shows tokens and no cost estimate. |
 
-Frontend: `CP_BACKEND_URL` (server-side only, used by the rewrite proxy).
+Frontend: `CP_BACKEND_URL` (server-side only, used by the rewrite proxy). The marketing
+site's download route optionally reads `CP_GITHUB_TOKEN` to raise the GitHub API rate limit.
 
 ---
 
@@ -213,9 +259,24 @@ Frontend: `CP_BACKEND_URL` (server-side only, used by the rewrite proxy).
   explicit disclosure that must be accepted before any provider call — enforced at the single
   network choke point, not just in the UI.
 
-**Platform**
-- Versioned `/api/v1` with OpenAPI, health/readiness, database-backed tasks with real status,
-  retry and cancel, in-app notifications, JSON data export, feedback intake.
+**Desktop shell** (`apps/desktop`)
+- Native windows for Windows, macOS and Linux that load the real workspace — no second UI
+  implementation to drift out of date.
+- System tray with workspace routes, native notifications and an unread badge, per-user
+  NSIS/DMG/AppImage/deb packaging, single-instance and `careerpilot://` deep links.
+- Validated document downloads to the Downloads folder with collision-safe names; external
+  origins open in the browser; camera/microphone/geolocation denied by default.
+- Isolated persistent session partition, strict CSP on local shell pages, IPC limited to
+  local frames, no telemetry, and background update checks from GitHub Releases.
+- Signed-ready release workflow builds each platform natively and publishes checksums and
+  `latest*.yml` update metadata.
+
+**Website** (`apps/web`)
+- Desktop-focused landing page, per-platform download page with install notes, honest
+  unsigned-build warnings and checksum instructions.
+- `/download/[platform]/[arch]` resolves the newest matching GitHub Release asset and
+  falls back to an explanatory state instead of a dead link.
+- Vitest coverage includes release/version/asset-name consistency with `apps/desktop`.
 
 ---
 
@@ -236,7 +297,12 @@ These are deliberate statements of what is **not** done. Do not treat them as de
 - **No scheduled email digests or push notifications.** Reminders appear in-app and in the
   calendar; there is no mailer to send them.
 - **No browser end-to-end suite** (see Tests). Frontend coverage is component-level plus the
-  production build.
+  production build. The desktop app is covered by unit + smoke tests, not real OS windows.
+- **Desktop builds are unsigned and unnotarized.** Windows SmartScreen and macOS Gatekeeper
+  will prompt, and macOS automatic updates require signing. Signing secrets are not
+  configured; the release workflow is otherwise complete.
+- **The download page needs published installers.** Until a `v*` tag is pushed, the download
+  buttons explain that no build is available rather than serving a broken file.
 - **Cost estimates need a pricing table.** Without `CP_AI_PRICING_JSON` the UI reports token
   usage and states that cost estimation is unavailable.
 - **No production account is seeded.** Create one through the sign-up page.
@@ -252,9 +318,11 @@ These are deliberate statements of what is **not** done. Do not treat them as de
    cannot be exported.
 4. CareerPilot never submits an application; the tracker records what you did elsewhere.
 5. API keys are encrypted at rest and never returned by the API.
-6. No profile content reaches an AI provider until a provider is configured and the disclosure
+6. The desktop app never invents a default workspace or a hosted account; it connects only
+   to the address the user enters.
+7. No profile content reaches an AI provider until a provider is configured and the disclosure
    is accepted — enforced before the HTTP call.
-7. Every user's data is scoped server-side; cross-user identifiers return 404.
+8. Every user's data is scoped server-side; cross-user identifiers return 404.
 
 ## Documentation
 
@@ -263,6 +331,10 @@ These are deliberate statements of what is **not** done. Do not treat them as de
 - [`docs/SECURITY.md`](docs/SECURITY.md) — threat model and controls, with honest limits.
 - [`docs/AI_PROVIDERS.md`](docs/AI_PROVIDERS.md) — provider setup, privacy, failure behaviour.
 - [`docs/JOB_SOURCES.md`](docs/JOB_SOURCES.md) — supported sources and how to add one.
+- [`apps/desktop/README.md`](apps/desktop/README.md) — desktop architecture, security model,
+  packaging, signing, updates, deep links and known gaps.
+- [`docs/WEBSITE_DEPLOYMENT.md`](docs/WEBSITE_DEPLOYMENT.md) — deploying the marketing site
+  and publishing installers.
 
 ## License
 

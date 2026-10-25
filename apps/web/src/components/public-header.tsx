@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { Download, Menu, X } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { buttonStyles } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/features", label: "Features" },
   { href: "/how-it-works", label: "How it works" },
+  { href: "/download", label: "Download" },
   { href: "/pricing", label: "Pricing" },
   { href: "/contact", label: "Contact" },
 ];
@@ -32,8 +33,9 @@ export function PublicHeader() {
         <div className="hidden items-center gap-2 md:flex">
           <ThemeToggle />
           <Link href="/sign-in" className={buttonStyles({ variant: "ghost", size: "sm" })}>Sign in</Link>
-          <Link href="/sign-up" className={buttonStyles({ variant: "primary", size: "sm" })}>
-            Start free
+          <Link href="/download" className={buttonStyles({ variant: "primary", size: "sm" })}>
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            Download app
           </Link>
         </div>
         <div className="flex items-center gap-2 md:hidden">
@@ -62,8 +64,8 @@ export function PublicHeader() {
             <div className="mt-2 grid grid-cols-2 gap-2">
               <Link href="/sign-in" onClick={() => setOpen(false)}
                     className={buttonStyles({ variant: "outline", size: "sm" })}>Sign in</Link>
-              <Link href="/sign-up" onClick={() => setOpen(false)}
-                    className={buttonStyles({ variant: "primary", size: "sm" })}>Start free</Link>
+              <Link href="/download" onClick={() => setOpen(false)}
+                    className={buttonStyles({ variant: "primary", size: "sm" })}>Download app</Link>
             </div>
           </nav>
         </div>

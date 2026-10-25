@@ -4,6 +4,12 @@ This document describes how to deploy CareerPilot AI. **Nothing here has been ex
 repository**: there is no hosted instance, no domain, no managed database and no email provider
 configured. Treat every step as a checklist, and verify each one in your own environment.
 
+> **Desktop and website.** This document covers the API, worker and web deployment. The
+> Electron shell and its release pipeline are documented in
+> [`apps/desktop/README.md`](apps/desktop/README.md); marketing-site deployment and installer
+> publishing are in [`docs/WEBSITE_DEPLOYMENT.md`](docs/WEBSITE_DEPLOYMENT.md). Nothing has
+> been deployed from this repository.
+
 The application is three processes plus two stateful dependencies:
 
 ```

@@ -5,12 +5,30 @@ import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
   title: {
-    default: "CareerPilot AI — career strategy, evidence, and applications",
+    default: "CareerPilot AI — an evidence-first career workspace, now on desktop",
     template: "%s · CareerPilot AI",
   },
   description:
-    "CareerPilot AI turns your verified experience into targeted applications, interview practice, and a clear job-search plan.",
+    "CareerPilot AI turns your verified experience into targeted applications, interview practice and a clear job-search plan. Available in the browser and as a desktop app for Windows, macOS and Linux.",
   applicationName: "CareerPilot AI",
+  category: "productivity",
+  openGraph: {
+    type: "website",
+    siteName: "CareerPilot AI",
+    title: "CareerPilot AI — an evidence-first career workspace, now on desktop",
+    description:
+      "Verified career data, explainable job matching and a review-gated application studio. In the browser and as a desktop app for Windows, macOS and Linux.",
+  },
+  twitter: {
+    card: "summary",
+    title: "CareerPilot AI — desktop career workspace",
+    description:
+      "A native window for your CareerPilot workspace, with tray, notifications, downloads and updates.",
+  },
+  keywords: [
+    "career", "job search", "CV builder", "resume", "cover letter", "interview practice",
+    "desktop app", "Windows", "macOS", "Linux",
+  ],
 };
 
 export const viewport: Viewport = {

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
+import { DownloadLinks } from "@/components/download-buttons";
+import { DESKTOP_VERSION } from "@/lib/desktop";
 
 const GROUPS = [
   {
@@ -7,6 +9,7 @@ const GROUPS = [
     links: [
       { href: "/features", label: "Features" },
       { href: "/how-it-works", label: "How it works" },
+      { href: "/download", label: "Download desktop" },
       { href: "/pricing", label: "Pricing" },
       { href: "/sign-up", label: "Create account" },
     ],
@@ -35,9 +38,15 @@ export function PublicFooter() {
         <div className="lg:col-span-2">
           <Logo />
           <p className="mt-3 max-w-sm text-sm text-[var(--muted)]">
-            A career workspace that keeps every claim traceable to your verified experience.
-            Built with FastAPI, PostgreSQL and Next.js.
+            A career workspace that keeps every claim traceable to your verified experience —
+            available in the browser and as a native desktop app.
           </p>
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+              CareerPilot Desktop {DESKTOP_VERSION}
+            </p>
+            <DownloadLinks />
+          </div>
           <p className="mt-4 text-xs text-[var(--muted)]">
             © {new Date().getFullYear()} CareerPilot AI. Brand colour #39FF14.
           </p>
@@ -62,7 +71,7 @@ export function PublicFooter() {
       <div className="border-t">
         <div className="container flex flex-wrap items-center justify-between gap-2 py-4 text-xs text-[var(--muted)]">
           <p>No fabricated metrics. Every insight states its sample size and calculation.</p>
-          <p>Self-hosted by design — your data stays in your PostgreSQL database.</p>
+          <p>The desktop app connects to a workspace you control; it holds no career data itself.</p>
         </div>
       </div>
     </footer>

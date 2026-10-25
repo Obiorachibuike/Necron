@@ -1,0 +1,138 @@
+name: Desktop installers
+
+# Builds signed-ready installers for Windows, macOS and Linux. Pushing a semver tag
+# (for example v1.0.0) publishes a GitHub Release with the installers, auto-update
+# metadata and SHA-256 checksums. Manual runs upload build artifacts only.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+            script: dist:linux
+            artifact: linux
+          - os: windows-latest
+            label: Windows
+            script: dist:win
+            artifact: windows
+          - os: macos-latest
+            label: macOS
+            script: dist:mac
+            artifact: macos
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node scripts/verify-release-tag.mjs
+
+      - name: Build installers
+        run: npm run ${{ matrix.script }} -- --publish never
+        env:
+          # No signing identity is configured in this repository yet. Remove this
+          # line once CSC_LINK / Apple secrets are added, otherwise electron-builder
+          # will skip signing even when credentials exist.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List artifacts
+        shell: bash
+        run: ls -la release
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.yml
+            apps/desktop/release/*.blockmap
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: desktop-*
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          cd release-assets
+          shopt -s nullglob
+          files=( *.exe *.dmg *.zip *.AppImage *.deb )
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No installers were downloaded; refusing to publish an empty release." >&2
+            exit 1
+          fi
+          sha256sum "${files[@]}" | sort -k2 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: CareerPilot Desktop ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: release-assets/*
+          body: |
+            CareerPilot Desktop ${{ github.ref_name }} — a native window for your CareerPilot workspace.
+
+            **Windows** — `CareerPilot-*-windows-x64.exe` (also ARM64 and portable builds)
+            **macOS** — `CareerPilot-*-mac-arm64.dmg` (Apple silicon) and `CareerPilot-*-mac-x64.dmg` (Intel)
+            **Linux** — `CareerPilot-*-linux-x86_64.AppImage` and `CareerPilot-*-linux-amd64.deb`
+
+            Verify downloads against `SHA256SUMS.txt`. The builds are not code-signed or notarized yet, so
+            Windows SmartScreen and macOS Gatekeeper may ask for confirmation on first launch.
+
+            The desktop app is a client for a CareerPilot workspace. It does not include a hosted account:
+            after installing, connect the workspace URL you normally open in a browser.
