@@ -1,7 +1,11 @@
 name: probe
-on: workflow_dispatch
+on:
+  push:
+    paths:
+      - ".github/workflows/_probe.yml"
+  workflow_dispatch:
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - run: echo ok
+      - run: echo "actions available"
